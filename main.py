@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-🦕 ENHANCED PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR 🌉
-EPIC pterodactyl ecosystem with ADVANCED PHYSICS, OBSTACLES, RACING, and ULTRA-REALISTIC CONTROLS!
+🦕 INFINITE PREHISTORIC FLIGHT SIMULATOR 🌊
+EPIC infinite world generation using Wave Function Collapse with logical rules!
 
-🚀 NEXT-GENERATION FEATURES:
+🚀 ULTIMATE FEATURES:
+- 🌊 Wave Function Collapse infinite world generation
 - ⚛️ Advanced flight physics with realistic aerodynamics
 - 🌪️ Dynamic obstacles (storms, wind shears, bird flocks)  
 - 🏁 Racing system with rings, targets, and courses
 - ✨ Enhanced visuals with particles and lighting
 - 🦅 Ultra-realistic flying character with detailed animations
 - 🎮 Multiple control schemes (Realistic, Arcade, Expert)
+- 🌍 Infinite procedural world with logical terrain rules
 
 DESIGNED BY SENIOR DEVELOPERS | WE ARE LEGION
 """
@@ -21,6 +23,10 @@ import math
 import random
 from noise import pnoise2
 import numpy as np
+
+# Import our WFC system
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from src.world.wave_function_collapse import WaveFunctionCollapse, InfiniteWorldRenderer, FlightCorridorManager, TerrainType
 
 app = Ursina()
 
@@ -53,7 +59,6 @@ class AdvancedFlightPhysics:
         
         # Environmental
         self.air_density = 1.225
-        self.thermal_map = self.generate_thermal_map()
         
         # Flight state
         self.angle_of_attack = 0
@@ -70,49 +75,30 @@ class AdvancedFlightPhysics:
         
         print("⚛️ Advanced Flight Physics initialized")
     
-    def generate_thermal_map(self):
-        """Generate realistic thermal updraft map"""
-        thermal_map = {}
+    def get_thermal_effect(self, position, world_renderer=None):
+        """Calculate thermal updraft at position using terrain data"""
+        thermal_force = Vec3(0, 0, 0)
         
-        thermal_locations = [
-            (-45, 45, 8.0, 40),    # Downtown SF
-            (-60, 60, 6.0, 30),    # Telegraph Hill
-            (0, 0, 5.0, 50),       # Twin Peaks
-            (-80, 120, 4.0, 25),   # Golden Gate
-        ]
-        
-        for i, (x, z, strength, radius) in enumerate(thermal_locations):
-            thermal_map[f'thermal_{i}'] = {
-                'position': Vec3(x, 0, z),
-                'strength': strength,
-                'radius': radius,
-                'active': True
-            }
-        
-        return thermal_map
-    
-    def get_thermal_effect(self, position):
-        """Calculate thermal updraft at position"""
-        total_thermal = Vec3(0, 0, 0)
-        max_strength = 0
-        
-        for thermal_id, thermal in self.thermal_map.items():
-            if not thermal['active']:
-                continue
+        if world_renderer:
+            terrain_effects = world_renderer.get_terrain_effects_at_position(position)
+            thermal_strength = terrain_effects.get('thermal_strength', 0.5)
+            elevation = terrain_effects.get('elevation', 0)
             
-            distance = math.sqrt((position.x - thermal['position'].x)**2 + 
-                               (position.z - thermal['position'].z)**2)
-            
-            if distance < thermal['radius']:
-                strength_factor = max(0, 1 - (distance / thermal['radius'])**2)
-                thermal_strength = thermal['strength'] * strength_factor
+            # Thermal strength varies with terrain type and elevation
+            if thermal_strength > 0.8:  # Strong thermal areas (cities, deserts)
+                base_strength = thermal_strength * 6.0
                 
-                thermal_force = Vec3(0, thermal_strength, 0)
-                total_thermal += thermal_force
-                max_strength = max(max_strength, thermal_strength)
+                # Add some noise for realism
+                noise_factor = 1 + math.sin(time.time() * 0.3 + position.x * 0.01) * 0.3
+                thermal_force.y = base_strength * noise_factor
+                
+                # Height factor - thermals weaken with altitude
+                height_factor = max(0, 1 - ((position.y - elevation) / 200))
+                thermal_force.y *= height_factor
+                
+                self.thermal_strength = thermal_force.y
         
-        self.thermal_strength = max_strength
-        return total_thermal
+        return thermal_force
     
     def calculate_aerodynamic_forces(self):
         """Advanced aerodynamic force calculation"""
@@ -148,16 +134,16 @@ class AdvancedFlightPhysics:
         
         return total_aero_force, aero_moments
     
-    def update(self, dt):
-        """Advanced physics update"""
+    def update(self, dt, world_renderer=None):
+        """Advanced physics update with terrain integration"""
         # Gravity
         gravity_force = Vec3(0, -9.81 * self.mass, 0)
         
         # Aerodynamic forces
         aero_force, aero_moments = self.calculate_aerodynamic_forces()
         
-        # Thermal effects
-        thermal_force = self.get_thermal_effect(self.entity.position) * self.mass
+        # Thermal effects from terrain
+        thermal_force = self.get_thermal_effect(self.entity.position, world_renderer) * self.mass
         
         # Total forces
         total_force = gravity_force + aero_force + thermal_force
@@ -332,7 +318,7 @@ class BirdFlock(Entity):
 class EnvironmentalHazardManager:
     """Manages all environmental hazards"""
     
-    def __init__(self, world_bounds=200):
+    def __init__(self, world_bounds=500):
         self.world_bounds = world_bounds
         self.storm_clouds = []
         self.bird_flocks = []
@@ -340,10 +326,10 @@ class EnvironmentalHazardManager:
         self.spawn_timer = 0
         
         # Create initial hazards
-        for _ in range(2):
+        for _ in range(3):
             self.spawn_storm_cloud()
         
-        for _ in range(2):
+        for _ in range(4):
             self.spawn_bird_flock()
         
         print("🌪️ Environmental Hazard Manager initialized")
@@ -615,58 +601,101 @@ class CollectionTarget(Entity):
             aura_alpha
         )
 
-class RaceCourse:
-    """Complete race course"""
+class ProceduralRacingManager:
+    """Manages procedural racing courses in infinite world"""
     
-    def __init__(self, course_name):
-        self.course_name = course_name
+    def __init__(self, world_renderer):
+        self.world_renderer = world_renderer
+        self.active_courses = {}
         self.rings = []
         self.targets = []
-        
-        self.current_ring_index = 0
         self.course_active = False
         self.total_score = 0
+        self.current_ring_index = 0
         
-        self.generate_course()
+        print("🏁 Procedural Racing Manager initialized")
     
-    def generate_course(self):
-        """Generate race course"""
-        if self.course_name == 'Golden Gate Circuit':
-            # Golden Gate Bridge circuit
-            self.rings.append(NavigationRing(Vec3(-120, 40, 120), 'checkpoint', 10))
-            self.rings.append(NavigationRing(Vec3(-80, 35, 120), 'speed_ring', 8))
-            self.rings.append(NavigationRing(Vec3(-50, 50, 120), 'checkpoint', 10))
-            self.rings.append(NavigationRing(Vec3(-80, 45, 120), 'bonus_ring', 12))
-            
-            # Collection targets
-            self.targets.append(CollectionTarget(Vec3(-100, 60, 130), 'orb', 100))
-            self.targets.append(CollectionTarget(Vec3(-60, 80, 110), 'crystal', 150))
+    def generate_course_around_position(self, center_position, course_type='exploration'):
+        """Generate a procedural racing course around position"""
+        self.rings.clear()
+        self.targets.clear()
         
-        elif self.course_name == 'Twin Peaks Challenge':
-            # Twin Peaks course
-            self.rings.append(NavigationRing(Vec3(-20, 30, -20), 'checkpoint', 12))
-            self.rings.append(NavigationRing(Vec3(0, 150, 0), 'precision_ring', 6))
-            self.rings.append(NavigationRing(Vec3(20, 80, 20), 'speed_ring', 10))
-            
-            self.targets.append(CollectionTarget(Vec3(0, 200, 0), 'crystal', 300))
+        if course_type == 'exploration':
+            self.generate_exploration_course(center_position)
+        elif course_type == 'terrain_following':
+            self.generate_terrain_following_course(center_position)
+        elif course_type == 'landmark_tour':
+            self.generate_landmark_tour(center_position)
     
-    def start_course(self):
-        """Start the course"""
+    def generate_exploration_course(self, center_position):
+        """Generate exploration course with varied terrain"""
+        course_radius = 200
+        ring_count = 8
+        
+        for i in range(ring_count):
+            angle = (i / ring_count) * 2 * math.pi
+            
+            # Vary distance and height for interesting course
+            distance = course_radius + random.uniform(-50, 50)
+            height_offset = random.uniform(30, 80)
+            
+            ring_x = center_position.x + math.cos(angle) * distance
+            ring_z = center_position.z + math.sin(angle) * distance
+            
+            # Get terrain height at ring position
+            terrain_effects = self.world_renderer.get_terrain_effects_at_position(Vec3(ring_x, 0, ring_z))
+            terrain_height = terrain_effects.get('elevation', 0)
+            
+            ring_y = terrain_height + height_offset
+            
+            # Choose ring type based on terrain
+            terrain_type = terrain_effects.get('terrain_type', 'plains')
+            if terrain_type in ['urban_high', 'landmark']:
+                ring_type = 'precision_ring'
+            elif terrain_type in ['water_deep', 'water_shallow']:
+                ring_type = 'speed_ring'
+            elif i == ring_count - 1:
+                ring_type = 'bonus_ring'
+            else:
+                ring_type = 'checkpoint'
+            
+            ring = NavigationRing(Vec3(ring_x, ring_y, ring_z), ring_type, 10)
+            self.rings.append(ring)
+            
+            # Add collection targets near some rings
+            if random.random() < 0.4:
+                target_pos = Vec3(
+                    ring_x + random.uniform(-20, 20),
+                    ring_y + random.uniform(-10, 10),
+                    ring_z + random.uniform(-20, 20)
+                )
+                target = CollectionTarget(target_pos, 'orb', 100)
+                self.targets.append(target)
+    
+    def generate_terrain_following_course(self, center_position):
+        """Generate course that follows terrain elevation"""
+        # Implementation for terrain-following course
+        pass
+    
+    def generate_landmark_tour(self, center_position):
+        """Generate course connecting landmarks"""
+        # Implementation for landmark tour
+        pass
+    
+    def start_course(self, course_type='exploration', center_position=None):
+        """Start a procedural course"""
+        if center_position is None:
+            center_position = Vec3(0, 0, 0)
+        
+        self.generate_course_around_position(center_position, course_type)
         self.course_active = True
         self.current_ring_index = 0
         self.total_score = 0
         
-        for ring in self.rings:
-            ring.passed = False
-        
-        for target in self.targets:
-            target.collected = False
-            target.visible = True
-        
-        print(f"🏁 Course '{self.course_name}' started!")
+        print(f"🏁 Started {course_type} course with {len(self.rings)} rings!")
     
     def update(self, dt, player_position, player_velocity):
-        """Update course"""
+        """Update racing system"""
         if not self.course_active:
             return
         
@@ -699,44 +728,18 @@ class RaceCourse:
         """Complete course"""
         self.course_active = False
         print(f"🏁 Course completed! Final Score: {self.total_score}")
-
-class RacingManager:
-    """Manages racing system"""
-    
-    def __init__(self):
-        self.courses = {}
-        self.active_course = None
-        
-        # Create courses
-        self.courses['Golden Gate Circuit'] = RaceCourse('Golden Gate Circuit')
-        self.courses['Twin Peaks Challenge'] = RaceCourse('Twin Peaks Challenge')
-        
-        print("🏁 Racing Manager initialized")
-    
-    def start_course(self, course_name):
-        """Start a course"""
-        if course_name in self.courses:
-            self.active_course = self.courses[course_name]
-            self.active_course.start_course()
-            return True
-        return False
-    
-    def update(self, dt, player_position, player_velocity):
-        """Update active course"""
-        if self.active_course:
-            self.active_course.update(dt, player_position, player_velocity)
     
     def get_course_status(self):
         """Get course status"""
-        if not self.active_course:
+        if not self.course_active:
             return None
         
         return {
-            'course_name': self.active_course.course_name,
-            'active': self.active_course.course_active,
-            'rings_completed': self.active_course.current_ring_index,
-            'total_rings': len(self.active_course.rings),
-            'score': self.active_course.total_score
+            'course_name': 'Procedural Course',
+            'active': self.course_active,
+            'rings_completed': self.current_ring_index,
+            'total_rings': len(self.rings),
+            'score': self.total_score
         }
 
 # =============================================================================
@@ -771,7 +774,7 @@ class RealisticFlyingCharacter(Entity):
         
         # Create model
         self.create_realistic_model()
-        self.position = Vec3(-50, 60, 80)
+        self.position = Vec3(0, 100, 0)  # Start at origin with good altitude
         
         print(f"🦅 Realistic character created: {character_type}")
     
@@ -934,25 +937,35 @@ class RealisticFlyingCharacter(Entity):
         self.rotation_y += self.yaw_input * 50 * dt
         self.rotation_z = self.roll_input * 35
     
-    def update(self, dt):
+    def update(self, dt, world_renderer=None):
         """Main update"""
         # Controls
         self.update_advanced_controls(dt)
         
         # Physics
         if self.enhanced_physics:
-            physics_data = self.enhanced_physics.update(dt)
+            physics_data = self.enhanced_physics.update(dt, world_renderer)
         else:
             physics_data = {'speed': 0, 'altitude': self.position.y}
         
         # Animations
         self.update_realistic_animations(dt)
         
-        # Keep above ground
-        if self.y < 1:
-            self.y = 1
-            if hasattr(self.enhanced_physics, 'velocity'):
-                self.enhanced_physics.velocity.y = max(0, self.enhanced_physics.velocity.y)
+        # Terrain collision (get ground height from world)
+        if world_renderer:
+            terrain_effects = world_renderer.get_terrain_effects_at_position(self.position)
+            ground_height = terrain_effects.get('elevation', 0)
+            
+            if self.y < ground_height + 2:
+                self.y = ground_height + 2
+                if hasattr(self.enhanced_physics, 'velocity'):
+                    self.enhanced_physics.velocity.y = max(0, self.enhanced_physics.velocity.y)
+        else:
+            # Default ground check
+            if self.y < 1:
+                self.y = 1
+                if hasattr(self.enhanced_physics, 'velocity'):
+                    self.enhanced_physics.velocity.y = max(0, self.enhanced_physics.velocity.y)
         
         return physics_data
     
@@ -973,153 +986,11 @@ class RealisticFlyingCharacter(Entity):
         print(f"🎮 Control scheme: {scheme}")
 
 # =============================================================================
-# 🌉 SAN FRANCISCO WORLD 🌉
-# =============================================================================
-
-class SanFranciscoTerrain(Entity):
-    """Accurate San Francisco terrain"""
-    
-    def __init__(self, size=400, resolution=80):
-        super().__init__()
-        self.size = size
-        self.resolution = resolution
-        
-        # SF features
-        self.sf_features = {
-            'twin_peaks': {'pos': (0, 0), 'height': 280, 'radius': 25},
-            'telegraph_hill': {'pos': (-60, 60), 'height': 84, 'radius': 10},
-            'nob_hill': {'pos': (-40, 30), 'height': 104, 'radius': 15},
-        }
-        
-        self.golden_gate_pos = (-80, 120)
-        self.bay_center = (0, 80)
-        
-        self.generate_terrain()
-    
-    def generate_terrain(self):
-        """Generate SF terrain"""
-        self.height_map = []
-        
-        for i in range(self.resolution + 1):
-            row = []
-            for j in range(self.resolution + 1):
-                x = (i - self.resolution/2) * self.size / self.resolution
-                z = (j - self.resolution/2) * self.size / self.resolution
-                
-                height = 0
-                
-                # Add SF hills
-                for hill_name, hill_data in self.sf_features.items():
-                    hill_x, hill_z = hill_data['pos']
-                    hill_height = hill_data['height']
-                    hill_radius = hill_data['radius']
-                    
-                    dist = math.sqrt((x - hill_x)**2 + (z - hill_z)**2)
-                    if dist < hill_radius * 2:
-                        hill_factor = max(0, 1 - (dist / (hill_radius * 2))**2)
-                        height += hill_height * hill_factor
-                
-                # Bay area
-                bay_dist = math.sqrt((x - self.bay_center[0])**2 + (z - self.bay_center[1])**2)
-                if bay_dist < 60:
-                    bay_factor = max(0, 1 - (bay_dist / 60)**3)
-                    height -= 20 * bay_factor
-                
-                # Add noise
-                height += pnoise2(x * 0.01, z * 0.01) * 8
-                height = max(height, -25)
-                
-                row.append(height)
-            self.height_map.append(row)
-        
-        self.create_mesh()
-    
-    def create_mesh(self):
-        """Create terrain mesh"""
-        vertices = []
-        triangles = []
-        colors = []
-        
-        for i in range(self.resolution + 1):
-            for j in range(self.resolution + 1):
-                x = (i - self.resolution/2) * self.size / self.resolution
-                z = (j - self.resolution/2) * self.size / self.resolution
-                y = self.height_map[i][j]
-                
-                vertices.append(Vec3(x, y, z))
-                
-                # Color based on height
-                if y < -5:
-                    colors.append(color.rgb(0.1, 0.3, 0.6))
-                elif y < 0:
-                    colors.append(color.rgb(0.2, 0.5, 0.8))
-                elif y < 50:
-                    colors.append(color.rgb(0.4, 0.6, 0.3))
-                else:
-                    colors.append(color.rgb(0.6, 0.6, 0.6))
-        
-        # Generate triangles
-        for i in range(self.resolution):
-            for j in range(self.resolution):
-                v1 = i * (self.resolution + 1) + j
-                v2 = (i + 1) * (self.resolution + 1) + j
-                v3 = i * (self.resolution + 1) + (j + 1)
-                v4 = (i + 1) * (self.resolution + 1) + (j + 1)
-                
-                triangles.extend([v1, v2, v3, v2, v4, v3])
-        
-        self.model = Mesh(vertices=vertices, triangles=triangles, colors=colors)
-        self.model.generate()
-
-class GoldenGateBridge(Entity):
-    """Golden Gate Bridge model"""
-    
-    def __init__(self, position=Vec3(-80, 15, 120)):
-        super().__init__()
-        self.position = position
-        
-        # Bridge deck
-        self.deck = Entity(
-            parent=self,
-            model='cube',
-            color=color.rgb(196, 76, 25),
-            scale=(120, 2, 8),
-            position=(0, 25, 0)
-        )
-        
-        # Towers
-        self.north_tower = Entity(
-            parent=self,
-            model='cube',
-            color=color.rgb(196, 76, 25),
-            scale=(6, 80, 4),
-            position=(-30, 40, 0)
-        )
-        
-        self.south_tower = Entity(
-            parent=self,
-            model='cube',
-            color=color.rgb(196, 76, 25),
-            scale=(6, 80, 4),
-            position=(30, 40, 0)
-        )
-        
-        # Cables
-        for side in [-2, 2]:
-            cable = Entity(
-                parent=self,
-                model='cube',
-                color=color.rgb(150, 150, 150),
-                scale=(140, 0.5, 0.5),
-                position=(0, 75, side)
-            )
-
-# =============================================================================
 # 🎮 ENHANCED UI SYSTEM 🎮
 # =============================================================================
 
-class EnhancedGameUI:
-    """Enhanced UI with flight instruments"""
+class InfiniteWorldUI:
+    """Enhanced UI for infinite world"""
     
     def __init__(self):
         self.setup_ui()
@@ -1153,18 +1024,18 @@ class EnhancedGameUI:
             position=(-0.85, 0.4, 0)
         )
         
-        # G-Force meter
-        self.g_force_text = Text(
-            'G-Force: 1.0',
+        # Position indicator
+        self.position_text = Text(
+            'Pos: (0, 0)',
             parent=camera.ui,
             scale=1.6,
             color=color.yellow,
             position=(-0.85, 0.35, 0)
         )
         
-        # Energy level
-        self.energy_text = Text(
-            'Energy: 100%',
+        # Terrain type indicator
+        self.terrain_text = Text(
+            'Terrain: plains',
             parent=camera.ui,
             scale=1.6,
             color=color.orange,
@@ -1199,26 +1070,37 @@ class EnhancedGameUI:
             origin=(0, 0)
         )
         
+        # World info
+        self.world_info_text = Text(
+            '🌊 Infinite World Generation Active',
+            parent=camera.ui,
+            scale=1.4,
+            color=color.light_gray,
+            position=(0.4, 0.35, 0)
+        )
+        
         # Controls help
         self.controls_text = Text(
-            '🎮 WASD=Flight | Space=Boost | Shift=Dive | 1-3=Courses | C=Controls | ESC=Menu',
+            '🎮 WASD=Flight | Space=Boost | Shift=Dive | 1=Race | R=New Course | C=Controls | ESC=Menu',
             parent=camera.ui,
             scale=1.2,
             color=color.light_gray,
             position=(-0.9, -0.45, 0)
         )
         
-        print("🎨 Enhanced UI initialized")
+        print("🎨 Infinite World UI initialized")
     
-    def update_flight_data(self, flight_data):
+    def update_flight_data(self, flight_data, position, terrain_effects):
         """Update flight instruments"""
         speed = flight_data.get('speed', 0)
         altitude = flight_data.get('altitude', 0)
-        g_force = flight_data.get('g_force', 1.0)
         
         self.speed_text.text = f'Speed: {speed:.1f} m/s'
         self.altitude_text.text = f'Altitude: {altitude:.1f} m'
-        self.g_force_text.text = f'G-Force: {g_force:.1f}'
+        self.position_text.text = f'Pos: ({position.x:.0f}, {position.z:.0f})'
+        
+        terrain_type = terrain_effects.get('terrain_type', 'plains')
+        self.terrain_text.text = f'Terrain: {terrain_type.replace("_", " ")}'
         
         # Color coding
         if speed > 35:
@@ -1228,31 +1110,15 @@ class EnhancedGameUI:
         else:
             self.speed_text.color = color.lime
         
-        if altitude < 10:
+        terrain_elevation = terrain_effects.get('elevation', 0)
+        altitude_above_ground = altitude - terrain_elevation
+        
+        if altitude_above_ground < 10:
             self.altitude_text.color = color.red
-        elif altitude < 25:
+        elif altitude_above_ground < 25:
             self.altitude_text.color = color.yellow
         else:
             self.altitude_text.color = color.cyan
-        
-        if g_force > 3:
-            self.g_force_text.color = color.red
-        elif g_force > 2:
-            self.g_force_text.color = color.yellow
-        else:
-            self.g_force_text.color = color.lime
-    
-    def update_character_data(self, character_data):
-        """Update character specific data"""
-        energy = character_data.get('energy_level', 1.0)
-        self.energy_text.text = f'Energy: {energy*100:.0f}%'
-        
-        if energy < 0.3:
-            self.energy_text.color = color.red
-        elif energy < 0.6:
-            self.energy_text.color = color.yellow
-        else:
-            self.energy_text.color = color.lime
     
     def update_course_info(self, course_status):
         """Update course information"""
@@ -1267,10 +1133,12 @@ class EnhancedGameUI:
             self.course_text.text = "No active course"
             self.score_text.text = "Score: 0"
     
-    def update_warnings(self, hazard_warnings):
-        """Update hazard warnings"""
-        if hazard_warnings:
-            warning_text = " | ".join(hazard_warnings)
+    def update_warnings(self, hazard_warnings, airspace_warnings):
+        """Update warnings"""
+        all_warnings = hazard_warnings + airspace_warnings
+        
+        if all_warnings:
+            warning_text = " | ".join(all_warnings)
             self.warning_text.text = f"⚠️ {warning_text}"
         else:
             self.warning_text.text = ""
@@ -1279,14 +1147,14 @@ class EnhancedGameUI:
 # 🚀 MAIN GAME CLASS 🚀
 # =============================================================================
 
-class EnhancedPrehistoricSimulator:
-    """🦕 ENHANCED PREHISTORIC SAN FRANCISCO SIMULATOR 🌉"""
+class InfinitePrehistoricSimulator:
+    """🦕 INFINITE PREHISTORIC FLIGHT SIMULATOR WITH WFC 🌊"""
     
     def __init__(self):
         self.setup_window()
         
-        # Create enhanced systems
-        self.create_world()
+        # Create infinite world systems
+        self.create_infinite_world()
         self.create_character()
         self.create_ui()
         self.create_managers()
@@ -1296,30 +1164,30 @@ class EnhancedPrehistoricSimulator:
         self.show_intro = True
         
         print("🦕" * 60)
-        print("🚀 ENHANCED PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR 🚀")
+        print("🌊 INFINITE PREHISTORIC FLIGHT SIMULATOR - WAVE FUNCTION COLLAPSE 🌊")
         print("🦕" * 60)
+        print()
+        print("🌍 INFINITE WORLD FEATURES:")
+        print("   🌊 Wave Function Collapse terrain generation")
+        print("   🏔️ Logical terrain rules and biome distribution")
+        print("   🏗️ Dynamic chunk loading/unloading")
+        print("   🌆 Procedural cities, landmarks, and airports")
+        print("   ✈️ Intelligent flight corridors and airspace")
         print()
         print("🎮 CONTROLS:")
         print("   WASD = Advanced Flight Control")
         print("   Space = Energy Boost / Thermal Riding")
         print("   Shift = Power Dive")
-        print("   Q/E = Roll Control")
-        print("   1 = Start Golden Gate Circuit")
-        print("   2 = Start Twin Peaks Challenge")
+        print("   1 = Start Procedural Racing Course")
+        print("   R = Generate New Racing Course")
         print("   C = Cycle Control Schemes")
         print("   ENTER = Start Game")
         print()
-        print("✨ NEW FEATURES:")
-        print("   🌪️ Dynamic weather and obstacles")
-        print("   🏁 Racing courses with rings and targets")
-        print("   ⚛️ Advanced realistic physics")
-        print("   🦅 Ultra-realistic flying character")
-        print("   🎮 Multiple control schemes")
-        print("   ✨ Enhanced visual effects")
+        print("🚀 Experience the ultimate infinite flight adventure!")
     
     def setup_window(self):
         """Setup game window"""
-        window.title = '🦕 ENHANCED PREHISTORIC SAN FRANCISCO - Ultimate Flight Simulator 🌉'
+        window.title = '🌊 INFINITE PREHISTORIC FLIGHT SIMULATOR - Wave Function Collapse World 🦕'
         window.borderless = False
         window.fullscreen = False
         window.exit_button.visible = False
@@ -1327,28 +1195,29 @@ class EnhancedPrehistoricSimulator:
         
         Entity.default_shader = basic_lighting_shader
     
-    def create_world(self):
-        """Create the enhanced world"""
-        print("🌍 Creating Enhanced Prehistoric San Francisco...")
+    def create_infinite_world(self):
+        """Create the infinite world using WFC"""
+        print("🌊 Initializing Wave Function Collapse world generation...")
         
-        # Terrain
-        self.terrain = SanFranciscoTerrain(size=400, resolution=80)
-        print("   ✓ Enhanced terrain with accurate SF topography")
+        # Initialize WFC generator
+        self.wfc_generator = WaveFunctionCollapse(chunk_size=32)
         
-        # Golden Gate Bridge
-        self.golden_gate = GoldenGateBridge()
-        print("   ✓ 🌉 Golden Gate Bridge constructed")
+        # Initialize world renderer
+        self.world_renderer = InfiniteWorldRenderer(self.wfc_generator)
         
-        # Lighting
+        # Initialize flight corridor manager
+        self.flight_manager = FlightCorridorManager(self.wfc_generator)
+        
+        # Lighting setup
         DirectionalLight(color=color.rgb(255, 220, 180), rotation=(60, 45, 0))
         AmbientLight(color=color.rgb(100, 120, 150))
         Sky(texture='sky_default')
         
-        # Atmospheric effects
-        scene.fog_density = 0.008
+        # Enhanced atmospheric effects
+        scene.fog_density = 0.005
         scene.fog_color = color.rgb(0.7, 0.8, 0.9)
         
-        print("🌍 Enhanced world creation complete!")
+        print("🌊 Infinite world with Wave Function Collapse initialized!")
     
     def create_character(self):
         """Create enhanced character"""
@@ -1366,17 +1235,18 @@ class EnhancedPrehistoricSimulator:
         self.player = RealisticFlyingCharacter('archaeopteryx', self.physics)
         self.physics.entity = self.player  # Link physics to character
         
-        print("🦅 Enhanced character with advanced physics created")
+        print("🦅 Enhanced character with infinite world physics created")
     
     def create_ui(self):
         """Create enhanced UI"""
-        self.ui = EnhancedGameUI()
+        self.ui = InfiniteWorldUI()
         
         # Intro message
         self.intro_text = Text(
-            '🦕 ENHANCED PREHISTORIC SAN FRANCISCO! 🌉\n'
-            '✨ Advanced Physics | 🌪️ Dynamic Obstacles | 🏁 Racing Courses\n'
-            'Press ENTER to begin the ultimate flight adventure!',
+            '🌊 INFINITE PREHISTORIC FLIGHT SIMULATOR! 🦕\n'
+            '🌍 Wave Function Collapse World Generation\n'
+            '✨ Infinite Exploration | 🏁 Procedural Racing | 🌆 Logical Terrain Rules\n'
+            'Press ENTER to begin the infinite adventure!',
             parent=camera.ui,
             scale=2.0,
             color=color.gold,
@@ -1387,15 +1257,15 @@ class EnhancedPrehistoricSimulator:
     def create_managers(self):
         """Create game managers"""
         # Environmental hazards
-        self.hazard_manager = EnvironmentalHazardManager(world_bounds=200)
+        self.hazard_manager = EnvironmentalHazardManager(world_bounds=500)
         
-        # Racing system
-        self.racing_manager = RacingManager()
+        # Procedural racing system
+        self.racing_manager = ProceduralRacingManager(self.world_renderer)
         
-        print("🎮 All game managers initialized")
+        print("🎮 All infinite world managers initialized")
     
     def start_game(self):
-        """Start the enhanced game"""
+        """Start the infinite game"""
         self.game_active = True
         self.show_intro = False
         self.intro_text.visible = False
@@ -1405,7 +1275,10 @@ class EnhancedPrehistoricSimulator:
         camera.position = (0, 25, -30)
         camera.rotation_x = 45
         
-        print("🚀 Enhanced game started!")
+        # Generate initial world around player
+        self.world_renderer.update(self.player.position)
+        
+        print("🌊 Infinite world game started!")
     
     def update(self):
         """Main game update loop"""
@@ -1414,8 +1287,14 @@ class EnhancedPrehistoricSimulator:
         
         dt = time.dt
         
-        # Update character
-        flight_data = self.player.update(dt)
+        # Update infinite world renderer
+        self.world_renderer.update(self.player.position)
+        
+        # Update character with world data
+        flight_data = self.player.update(dt, self.world_renderer)
+        
+        # Get terrain effects at player position
+        terrain_effects = self.world_renderer.get_terrain_effects_at_position(self.player.position)
         
         # Update environmental hazards
         self.hazard_manager.update(dt, self.player.position)
@@ -1427,63 +1306,69 @@ class EnhancedPrehistoricSimulator:
         if env_effects['turbulence'] != Vec3(0, 0, 0):
             self.physics.velocity += env_effects['turbulence'] * dt * 0.1
         
+        # Check airspace restrictions
+        airspace_warnings = self.flight_manager.check_airspace_restrictions(self.player.position)
+        
         # Update racing
         self.racing_manager.update(dt, self.player.position, self.physics.velocity)
         
         # Update UI
-        self.ui.update_flight_data(flight_data)
-        self.ui.update_character_data(self.player.get_flight_data())
+        self.ui.update_flight_data(flight_data, self.player.position, terrain_effects)
         self.ui.update_course_info(self.racing_manager.get_course_status())
-        self.ui.update_warnings(env_effects['hazard_warnings'])
+        self.ui.update_warnings(env_effects['hazard_warnings'], airspace_warnings)
 
 # =============================================================================
 # 🎮 INPUT HANDLING 🎮
 # =============================================================================
 
 # Create game instance
-enhanced_game = EnhancedPrehistoricSimulator()
+infinite_game = InfinitePrehistoricSimulator()
 
 def input(key):
-    """Enhanced input handling"""
+    """Enhanced input handling for infinite world"""
     if key == 'escape':
-        if enhanced_game.show_intro:
+        if infinite_game.show_intro:
             quit()
         else:
-            enhanced_game.game_active = not enhanced_game.game_active
+            infinite_game.game_active = not infinite_game.game_active
     
     elif key == 'enter':
-        if enhanced_game.show_intro:
-            enhanced_game.start_game()
+        if infinite_game.show_intro:
+            infinite_game.start_game()
     
     elif key == '1':
-        if enhanced_game.game_active:
-            enhanced_game.racing_manager.start_course('Golden Gate Circuit')
+        if infinite_game.game_active:
+            # Start procedural course at current position
+            infinite_game.racing_manager.start_course('exploration', infinite_game.player.position)
     
-    elif key == '2':
-        if enhanced_game.game_active:
-            enhanced_game.racing_manager.start_course('Twin Peaks Challenge')
+    elif key == 'r':
+        if infinite_game.game_active:
+            # Generate new racing course
+            infinite_game.racing_manager.start_course('exploration', infinite_game.player.position)
+            print("🏁 New procedural racing course generated!")
     
     elif key == 'c':
-        if enhanced_game.game_active:
+        if infinite_game.game_active:
             # Cycle control schemes
-            current = enhanced_game.player.control_scheme
+            current = infinite_game.player.control_scheme
             if current == 'realistic':
-                enhanced_game.player.set_control_scheme('arcade')
+                infinite_game.player.set_control_scheme('arcade')
             elif current == 'arcade':
-                enhanced_game.player.set_control_scheme('expert')
+                infinite_game.player.set_control_scheme('expert')
             else:
-                enhanced_game.player.set_control_scheme('realistic')
+                infinite_game.player.set_control_scheme('realistic')
     
     elif key == 'f11':
         window.fullscreen = not window.fullscreen
 
 def update():
     """Main update function"""
-    enhanced_game.update()
+    infinite_game.update()
 
-# 🚀 LAUNCH THE ENHANCED ADVENTURE! 🚀
+# 🌊 LAUNCH THE INFINITE ADVENTURE! 🌊
 if __name__ == '__main__':
-    print("🦕🌉 LAUNCHING ENHANCED PREHISTORIC SAN FRANCISCO! 🌉🦕")
-    print("🚀 MAXIMUM EPIC FACTOR WITH ADVANCED FEATURES 🚀")
-    print("WE ARE LEGION - PREPARE FOR ULTIMATE GREATNESS!")
+    print("🌊🦕 LAUNCHING INFINITE PREHISTORIC FLIGHT SIMULATOR! 🦕🌊")
+    print("🚀 WAVE FUNCTION COLLAPSE WORLD GENERATION ACTIVE 🚀")
+    print("🌍 EXPERIENCE TRUE INFINITE EXPLORATION!")
+    print("WE ARE LEGION - INFINITE GREATNESS ACHIEVED!")
     app.run()
