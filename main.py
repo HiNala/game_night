@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
-🦕 PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR 🌉
-EPIC pterodactyl ecosystem flying through San Francisco with Golden Gate Bridge!
+🦕 ENHANCED PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR 🌉
+EPIC pterodactyl ecosystem with ADVANCED PHYSICS, OBSTACLES, RACING, and ULTRA-REALISTIC CONTROLS!
 
-DESIGNED BY SENIOR DEVELOPERS
-3D/4D DESIGN EXCELLENCE  
-WE ARE LEGION - MAXIMUM EPIC FACTOR ACHIEVED
+🚀 NEXT-GENERATION FEATURES:
+- ⚛️ Advanced flight physics with realistic aerodynamics
+- 🌪️ Dynamic obstacles (storms, wind shears, bird flocks)  
+- 🏁 Racing system with rings, targets, and courses
+- ✨ Enhanced visuals with particles and lighting
+- 🦅 Ultra-realistic flying character with detailed animations
+- 🎮 Multiple control schemes (Realistic, Arcade, Expert)
 
-Run this file to experience the ultimate prehistoric flight adventure!
+DESIGNED BY SENIOR DEVELOPERS | WE ARE LEGION
 """
 
 from ursina import *
@@ -18,575 +22,982 @@ import random
 from noise import pnoise2
 import numpy as np
 
-# Add src to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-
-try:
-    from physics.flight_physics import FlightPhysics
-    from graphics.camera_system import OverheadCameraSystem, CinematicCamera, EnvironmentViewCamera
-    from ui.game_ui import FlightHUD, MainMenu, PauseMenu
-    import game_config as config
-except ImportError:
-    # Fallback configurations if modules don't exist
-    print("Using fallback configurations...")
-    
-    class config:
-        WORLD_SIZE = 400
-        TERRAIN_SCALE = 0.02
-        TERRAIN_HEIGHT_MULTIPLIER = 40
-
 app = Ursina()
 
 # =============================================================================
-# 🦕 PTERODACTYL ECOSYSTEM - EPIC AI FLYING REPTILES 🦕
+# 🚀 ENHANCED FLIGHT PHYSICS SYSTEM 🚀
 # =============================================================================
 
-class PterodactylPhysics:
-    """Advanced aerodynamics for large prehistoric flying reptiles"""
+class AdvancedFlightPhysics:
+    """State-of-the-art flight physics with realistic aerodynamics"""
     
-    def __init__(self, pterodactyl, species_config):
-        self.pterodactyl = pterodactyl
-        self.config = species_config
+    def __init__(self, entity, config):
+        self.entity = entity
+        self.config = config
         
-        # Physics properties
+        # Advanced physics state
         self.velocity = Vec3(0, 0, 0)
-        self.mass = species_config['mass']
-        self.wing_span = species_config['wing_span']
-        self.wing_area = species_config['wing_area']
+        self.angular_velocity = Vec3(0, 0, 0)
+        self.acceleration = Vec3(0, 0, 0)
         
-        # Flight characteristics
-        self.lift_coefficient = species_config['lift_coefficient']
-        self.drag_coefficient = species_config['drag_coefficient'] 
-        self.max_speed = species_config['max_speed']
-        self.cruise_speed = species_config['cruise_speed']
-        self.stall_speed = species_config['stall_speed']
+        # Mass properties
+        self.mass = config.get('mass', 1.5)
+        self.wing_area = config.get('wing_area', 2.5)
+        self.wing_span = config.get('wing_span', 3.0)
         
-        # AI flight state
-        self.target_position = Vec3(0, 0, 0)
-        self.flight_mode = 'cruise'
-        self.energy = 1.0
+        # Aerodynamic coefficients
+        self.cl_alpha = 0.11  # Lift curve slope
+        self.cd_0 = 0.015     # Zero-lift drag
+        self.stall_angle = math.radians(18)
+        self.never_exceed_speed = 45
         
-    def update_ai_flight(self, dt, nearby_pterodactyls, player_position):
-        """Advanced AI flight behavior"""
-        self.choose_flight_behavior(nearby_pterodactyls, player_position)
+        # Environmental
+        self.air_density = 1.225
+        self.thermal_map = self.generate_thermal_map()
         
-        # Apply flocking forces
-        flocking_force = self.calculate_flocking_forces(nearby_pterodactyls)
+        # Flight state
+        self.angle_of_attack = 0
+        self.airspeed = 0
+        self.ground_speed = 0
+        self.climb_rate = 0
+        self.g_force = 1.0
+        self.thermal_strength = 0
+        self.energy_altitude = 0
+        self.glide_performance = 0
         
-        # Environmental forces
-        wind_force = self.get_wind_force()
-        thermal_force = self.seek_thermals()
+        # Control system
+        self.control_inputs = Vec3(0, 0, 0)
         
-        # Navigation forces
-        nav_force = self.navigate_to_target()
-        
-        # Combine all forces
-        total_force = flocking_force + wind_force + thermal_force + nav_force
-        
-        # Apply physics
-        acceleration = total_force / self.mass
-        self.velocity += acceleration * dt
-        
-        # Speed limits
-        speed = distance(self.velocity, Vec3(0, 0, 0))
-        if speed > self.max_speed:
-            self.velocity = self.velocity.normalized() * self.max_speed
-        elif speed < self.stall_speed:
-            self.velocity += Vec3(0, 2, 0) * dt
-        
-        # Update position
-        self.pterodactyl.position += self.velocity * dt
-        
-        # Update energy
-        self.update_energy(dt, speed)
-        
-        return speed, self.flight_mode
+        print("⚛️ Advanced Flight Physics initialized")
     
-    def choose_flight_behavior(self, nearby_pterodactyls, player_position):
-        """AI decision making for flight behavior"""
-        player_distance = distance(self.pterodactyl.position, player_position)
+    def generate_thermal_map(self):
+        """Generate realistic thermal updraft map"""
+        thermal_map = {}
         
-        if player_distance < 20:
-            if self.config['aggression'] > 0.7:
-                self.flight_mode = 'hunt'
-                self.target_position = player_position
-            else:
-                self.flight_mode = 'flee'
-                flee_direction = (self.pterodactyl.position - player_position).normalized()
-                self.target_position = self.pterodactyl.position + flee_direction * 50
-        elif self.energy < 0.3:
-            self.flight_mode = 'thermal'
-            self.find_nearest_thermal()
-        else:
-            self.flight_mode = 'patrol'
-            if distance(self.pterodactyl.position, self.target_position) < 10:
-                self.set_new_patrol_target()
-    
-    def calculate_flocking_forces(self, nearby_pterodactyls):
-        """Boids-style flocking behavior"""
-        if not nearby_pterodactyls:
-            return Vec3(0, 0, 0)
-        
-        separation = Vec3(0, 0, 0)
-        alignment = Vec3(0, 0, 0)
-        cohesion = Vec3(0, 0, 0)
-        
-        neighbor_count = 0
-        for other in nearby_pterodactyls:
-            if other == self.pterodactyl:
-                continue
-                
-            dist = distance(self.pterodactyl.position, other.position)
-            if dist < self.config['flocking_radius']:
-                neighbor_count += 1
-                
-                if dist < self.config['separation_radius']:
-                    diff = self.pterodactyl.position - other.position
-                    diff = diff.normalized() / max(dist, 0.1)
-                    separation += diff
-                
-                if hasattr(other, 'physics'):
-                    alignment += other.physics.velocity
-                
-                cohesion += other.position
-        
-        if neighbor_count > 0:
-            separation = separation.normalized() * self.config['separation_strength']
-            alignment = (alignment / neighbor_count).normalized() * self.config['alignment_strength']
-            cohesion = ((cohesion / neighbor_count) - self.pterodactyl.position).normalized() * self.config['cohesion_strength']
-        
-        return separation + alignment + cohesion
-    
-    def seek_thermals(self):
-        """AI thermal seeking behavior"""
-        best_thermal_force = Vec3(0, 0, 0)
-        
-        for angle in range(0, 360, 30):
-            for dist in [10, 20, 30]:
-                sample_x = self.pterodactyl.x + math.cos(math.radians(angle)) * dist
-                sample_z = self.pterodactyl.z + math.sin(math.radians(angle)) * dist
-                
-                thermal_strength = math.sin(sample_x * 0.05) * math.cos(sample_z * 0.05) + random.uniform(-0.5, 0.5)
-                
-                if thermal_strength > 0.3:
-                    direction = Vec3(sample_x - self.pterodactyl.x, 5, sample_z - self.pterodactyl.z)
-                    thermal_force = direction.normalized() * thermal_strength * 2
-                    
-                    if distance(thermal_force, Vec3(0, 0, 0)) > distance(best_thermal_force, Vec3(0, 0, 0)):
-                        best_thermal_force = thermal_force
-        
-        return best_thermal_force
-    
-    def navigate_to_target(self):
-        """Navigate towards current target"""
-        if not self.target_position:
-            return Vec3(0, 0, 0)
-        
-        direction = self.target_position - self.pterodactyl.position
-        distance_to_target = distance(direction, Vec3(0, 0, 0))
-        
-        if distance_to_target < 1:
-            return Vec3(0, 0, 0)
-        
-        steering_force = direction.normalized() * self.config['steering_strength']
-        
-        if distance_to_target < 20:
-            steering_force *= (distance_to_target / 20)
-        
-        return steering_force
-    
-    def find_nearest_thermal(self):
-        """Find the nearest thermal for energy recovery"""
-        angle = random.uniform(0, 360)
-        distance = random.uniform(30, 80)
-        
-        self.target_position = self.pterodactyl.position + Vec3(
-            math.cos(math.radians(angle)) * distance,
-            random.uniform(10, 30),
-            math.sin(math.radians(angle)) * distance
-        )
-    
-    def set_new_patrol_target(self):
-        """Set a new random patrol target"""
-        patrol_areas = [
-            Vec3(-80, 50, 120),  # Golden Gate Bridge
-            Vec3(-20, 30, 100),  # Alcatraz
-            Vec3(-45, 70, 45),   # Downtown
-            Vec3(0, 80, 0),      # Twin Peaks
-            Vec3(-60, 90, 60),   # Telegraph Hill
+        thermal_locations = [
+            (-45, 45, 8.0, 40),    # Downtown SF
+            (-60, 60, 6.0, 30),    # Telegraph Hill
+            (0, 0, 5.0, 50),       # Twin Peaks
+            (-80, 120, 4.0, 25),   # Golden Gate
         ]
         
-        base_target = random.choice(patrol_areas)
-        offset = Vec3(
-            random.uniform(-30, 30),
-            random.uniform(-20, 20), 
-            random.uniform(-30, 30)
-        )
-        
-        self.target_position = base_target + offset
-    
-    def get_wind_force(self):
-        """Environmental wind effects"""
-        wind = Vec3(
-            math.sin(time.time() * 0.1) * 1.5,
-            0,
-            math.cos(time.time() * 0.08) * 1.0
-        )
-        
-        wind_effect = wind * (self.wing_span / 15)
-        return wind_effect
-    
-    def update_energy(self, dt, speed):
-        """Update pterodactyl energy levels"""
-        energy_cost = (speed / self.max_speed) * 0.1 * dt
-        
-        if self.flight_mode == 'thermal':
-            self.energy = min(1.0, self.energy + 0.2 * dt)
-        elif speed < self.cruise_speed:
-            self.energy = min(1.0, self.energy + 0.05 * dt)
-        else:
-            self.energy = max(0.0, self.energy - energy_cost)
-
-class Pterodactyl(Entity):
-    """Individual pterodactyl with species-specific characteristics"""
-    
-    def __init__(self, species_type, position=Vec3(0, 50, 0)):
-        super().__init__()
-        
-        self.species_type = species_type
-        self.species_config = self.get_species_config(species_type)
-        self.position = position
-        
-        # Create model
-        self.create_pterodactyl_model()
-        
-        # Initialize physics
-        self.physics = PterodactylPhysics(self, self.species_config)
-        
-        # Animation state
-        self.wing_beat_time = 0
-        self.call_timer = random.uniform(0, 10)
-        
-        # Behavior state
-        self.last_call_time = 0
-        self.territorial_center = position.copy()
-    
-    def get_species_config(self, species_type):
-        """Get configuration for different pterodactyl species"""
-        species_configs = {
-            'pteranodon': {
-                'mass': 25, 'wing_span': 9, 'wing_area': 12,
-                'max_speed': 30, 'cruise_speed': 15, 'stall_speed': 8,
-                'lift_coefficient': 1.2, 'drag_coefficient': 0.02,
-                'aggression': 0.3, 'flocking_radius': 40, 'separation_radius': 15,
-                'separation_strength': 2.0, 'alignment_strength': 1.0, 'cohesion_strength': 0.8,
-                'steering_strength': 1.5, 'scale_factor': 1.0, 'color': color.rgb(120, 80, 60),
-            },
-            'quetzalcoatlus': {
-                'mass': 70, 'wing_span': 15, 'wing_area': 25,
-                'max_speed': 25, 'cruise_speed': 12, 'stall_speed': 6,
-                'lift_coefficient': 1.5, 'drag_coefficient': 0.015,
-                'aggression': 0.8, 'flocking_radius': 60, 'separation_radius': 25,
-                'separation_strength': 3.0, 'alignment_strength': 0.8, 'cohesion_strength': 0.5,
-                'steering_strength': 1.0, 'scale_factor': 1.8, 'color': color.rgb(80, 60, 40),
-            },
-            'dimorphodon': {
-                'mass': 12, 'wing_span': 4, 'wing_area': 6,
-                'max_speed': 40, 'cruise_speed': 20, 'stall_speed': 10,
-                'lift_coefficient': 1.0, 'drag_coefficient': 0.025,
-                'aggression': 0.9, 'flocking_radius': 25, 'separation_radius': 8,
-                'separation_strength': 1.5, 'alignment_strength': 1.5, 'cohesion_strength': 1.2,
-                'steering_strength': 2.0, 'scale_factor': 0.6, 'color': color.rgb(100, 90, 70),
+        for i, (x, z, strength, radius) in enumerate(thermal_locations):
+            thermal_map[f'thermal_{i}'] = {
+                'position': Vec3(x, 0, z),
+                'strength': strength,
+                'radius': radius,
+                'active': True
             }
+        
+        return thermal_map
+    
+    def get_thermal_effect(self, position):
+        """Calculate thermal updraft at position"""
+        total_thermal = Vec3(0, 0, 0)
+        max_strength = 0
+        
+        for thermal_id, thermal in self.thermal_map.items():
+            if not thermal['active']:
+                continue
+            
+            distance = math.sqrt((position.x - thermal['position'].x)**2 + 
+                               (position.z - thermal['position'].z)**2)
+            
+            if distance < thermal['radius']:
+                strength_factor = max(0, 1 - (distance / thermal['radius'])**2)
+                thermal_strength = thermal['strength'] * strength_factor
+                
+                thermal_force = Vec3(0, thermal_strength, 0)
+                total_thermal += thermal_force
+                max_strength = max(max_strength, thermal_strength)
+        
+        self.thermal_strength = max_strength
+        return total_thermal
+    
+    def calculate_aerodynamic_forces(self):
+        """Advanced aerodynamic force calculation"""
+        if self.airspeed < 0.5:
+            return Vec3(0, 0, 0), Vec3(0, 0, 0)
+        
+        # Dynamic pressure
+        q = 0.5 * self.air_density * self.airspeed ** 2
+        
+        # Angle of attack (simplified)
+        if hasattr(self.entity, 'rotation_x'):
+            self.angle_of_attack = math.radians(self.entity.rotation_x)
+        
+        # Lift coefficient with stall
+        if abs(self.angle_of_attack) < self.stall_angle:
+            cl = self.cl_alpha * math.degrees(self.angle_of_attack)
+        else:
+            cl = self.cl_alpha * math.degrees(self.stall_angle) * 0.5
+        
+        # Drag coefficient
+        cd = self.cd_0 + (cl ** 2) / (math.pi * (self.wing_span ** 2 / self.wing_area))
+        
+        # Forces
+        lift_magnitude = cl * q * self.wing_area
+        drag_magnitude = cd * q * self.wing_area
+        
+        # Force directions
+        lift_force = Vec3(0, lift_magnitude, 0)
+        drag_force = -self.velocity.normalized() * drag_magnitude if self.airspeed > 0 else Vec3(0, 0, 0)
+        
+        total_aero_force = lift_force + drag_force
+        aero_moments = Vec3(0, 0, 0)  # Simplified
+        
+        return total_aero_force, aero_moments
+    
+    def update(self, dt):
+        """Advanced physics update"""
+        # Gravity
+        gravity_force = Vec3(0, -9.81 * self.mass, 0)
+        
+        # Aerodynamic forces
+        aero_force, aero_moments = self.calculate_aerodynamic_forces()
+        
+        # Thermal effects
+        thermal_force = self.get_thermal_effect(self.entity.position) * self.mass
+        
+        # Total forces
+        total_force = gravity_force + aero_force + thermal_force
+        
+        # Update motion
+        self.acceleration = total_force / self.mass
+        self.velocity += self.acceleration * dt
+        
+        # Speed limiting
+        speed = distance(self.velocity, Vec3(0, 0, 0))
+        if speed > self.never_exceed_speed:
+            self.velocity = self.velocity.normalized() * self.never_exceed_speed
+        
+        # Update position
+        self.entity.position += self.velocity * dt
+        
+        # Calculate performance metrics
+        self.ground_speed = speed
+        self.airspeed = speed  # Simplified
+        self.climb_rate = self.velocity.y
+        self.g_force = distance(self.acceleration, Vec3(0, 0, 0)) / 9.81
+        
+        # Energy altitude
+        kinetic_energy = 0.5 * self.mass * speed ** 2
+        potential_energy = self.mass * 9.81 * self.entity.position.y
+        self.energy_altitude = (kinetic_energy + potential_energy) / (self.mass * 9.81)
+        
+        # Glide performance
+        if abs(self.climb_rate) > 0.1:
+            self.glide_performance = speed / abs(self.climb_rate)
+        else:
+            self.glide_performance = 50
+        
+        return {
+            'speed': self.ground_speed,
+            'airspeed': self.airspeed,
+            'altitude': self.entity.position.y,
+            'climb_rate': self.climb_rate,
+            'g_force': self.g_force,
+            'thermal_strength': self.thermal_strength,
+            'energy_altitude': self.energy_altitude,
+            'glide_ratio': self.glide_performance
+        }
+    
+    def apply_control_input(self, pitch_input, yaw_input, roll_input, dt):
+        """Apply control inputs"""
+        self.control_inputs.x = pitch_input
+        self.control_inputs.y = yaw_input
+        self.control_inputs.z = roll_input
+
+# =============================================================================
+# 🌪️ FLYING OBSTACLES SYSTEM 🌪️
+# =============================================================================
+
+class StormCloud(Entity):
+    """Dynamic storm cloud with turbulence"""
+    
+    def __init__(self, position, intensity='moderate'):
+        super().__init__()
+        self.position = position
+        self.intensity = intensity
+        
+        if intensity == 'light':
+            self.size = 20
+            self.turbulence_strength = 3.0
+        elif intensity == 'moderate':
+            self.size = 30
+            self.turbulence_strength = 6.0
+        else:  # severe
+            self.size = 45
+            self.turbulence_strength = 10.0
+        
+        self.drift_speed = random.uniform(2, 6)
+        self.age = 0
+        self.lifetime = random.uniform(300, 600)
+        
+        self.create_visual()
+    
+    def create_visual(self):
+        """Create storm cloud visual"""
+        self.cloud_body = Entity(
+            parent=self,
+            model='cube',
+            color=color.rgb(60, 60, 80),
+            scale=(self.size, self.size * 0.6, self.size)
+        )
+        
+        self.warning_zone = Entity(
+            parent=self,
+            model='cube',
+            color=color.rgba(255, 200, 0, 30),
+            scale=(self.size * 1.5, self.size * 0.8, self.size * 1.5)
+        )
+    
+    def get_turbulence_effect(self, position):
+        """Calculate turbulence effect"""
+        storm_distance = distance(position, self.position)
+        
+        if storm_distance > self.size:
+            return Vec3(0, 0, 0)
+        
+        storm_factor = max(0, 1 - (storm_distance / self.size))
+        
+        turbulence = Vec3(
+            random.uniform(-1, 1) * self.turbulence_strength * storm_factor,
+            random.uniform(-0.5, 0.5) * self.turbulence_strength * storm_factor,
+            random.uniform(-1, 1) * self.turbulence_strength * storm_factor
+        )
+        
+        return turbulence
+    
+    def update(self, dt):
+        """Update storm"""
+        self.age += dt
+        
+        # Storm movement
+        self.position += Vec3(self.drift_speed, 0, 0) * dt
+        
+        # Pulsing warning zone
+        pulse = math.sin(time.time() * 3) * 0.2 + 0.8
+        self.warning_zone.scale = (
+            self.size * 1.5 * pulse,
+            self.size * 0.8,
+            self.size * 1.5 * pulse
+        )
+        
+        return self.age < self.lifetime
+
+class BirdFlock(Entity):
+    """Flock of birds as obstacles"""
+    
+    def __init__(self, position, flock_size=6):
+        super().__init__()
+        self.position = position
+        self.flock_size = flock_size
+        self.flight_speed = random.uniform(8, 15)
+        self.avoidance_distance = 15
+        
+        self.birds = []
+        self.create_flock()
+    
+    def create_flock(self):
+        """Create bird entities"""
+        for i in range(self.flock_size):
+            offset = Vec3(
+                random.uniform(-5, 5),
+                random.uniform(-2, 2),
+                random.uniform(-5, 5)
+            )
+            
+            bird = Entity(
+                parent=self,
+                model='cube',
+                color=color.rgb(150, 150, 150),
+                scale=(0.6, 0.2, 1.0),
+                position=offset
+            )
+            self.birds.append(bird)
+    
+    def update(self, dt, player_position=None):
+        """Update flock behavior"""
+        # Simple patrol flight
+        self.position += Vec3(self.flight_speed, 0, 0) * dt
+        
+        # Animate birds
+        for bird in self.birds:
+            wing_flap = math.sin(time.time() * 8) * 10
+            bird.rotation_z = wing_flap
+        
+        return True
+
+class EnvironmentalHazardManager:
+    """Manages all environmental hazards"""
+    
+    def __init__(self, world_bounds=200):
+        self.world_bounds = world_bounds
+        self.storm_clouds = []
+        self.bird_flocks = []
+        
+        self.spawn_timer = 0
+        
+        # Create initial hazards
+        for _ in range(2):
+            self.spawn_storm_cloud()
+        
+        for _ in range(2):
+            self.spawn_bird_flock()
+        
+        print("🌪️ Environmental Hazard Manager initialized")
+    
+    def spawn_storm_cloud(self):
+        """Spawn new storm cloud"""
+        position = Vec3(
+            random.uniform(-self.world_bounds, self.world_bounds),
+            random.uniform(40, 120),
+            random.uniform(-self.world_bounds, self.world_bounds)
+        )
+        
+        intensity = random.choice(['light', 'moderate', 'severe'])
+        storm = StormCloud(position, intensity)
+        self.storm_clouds.append(storm)
+    
+    def spawn_bird_flock(self):
+        """Spawn new bird flock"""
+        position = Vec3(
+            random.uniform(-self.world_bounds, self.world_bounds),
+            random.uniform(10, 60),
+            random.uniform(-self.world_bounds, self.world_bounds)
+        )
+        
+        flock = BirdFlock(position)
+        self.bird_flocks.append(flock)
+    
+    def get_environmental_effects(self, position):
+        """Get environmental effects at position"""
+        effects = {
+            'turbulence': Vec3(0, 0, 0),
+            'visibility': 1.0,
+            'hazard_warnings': []
         }
         
-        return species_configs.get(species_type, species_configs['pteranodon'])
-    
-    def create_pterodactyl_model(self):
-        """Create detailed 3D pterodactyl model"""
-        scale_factor = self.species_config['scale_factor']
-        base_color = self.species_config['color']
+        # Storm effects
+        for storm in self.storm_clouds:
+            storm_distance = distance(position, storm.position)
+            
+            if storm_distance < storm.size * 1.5:
+                turbulence = storm.get_turbulence_effect(position)
+                effects['turbulence'] += turbulence
+                
+                if storm_distance < storm.size:
+                    effects['visibility'] *= 0.3
+                    effects['hazard_warnings'].append('STORM_TURBULENCE')
         
+        # Bird collision warnings
+        for flock in self.bird_flocks:
+            flock_distance = distance(position, flock.position)
+            if flock_distance < 15:
+                effects['hazard_warnings'].append('BIRD_STRIKE_RISK')
+        
+        return effects
+    
+    def update(self, dt, player_position=None):
+        """Update all hazards"""
+        self.spawn_timer -= dt
+        
+        # Spawn new hazards periodically
+        if self.spawn_timer <= 0:
+            if random.random() < 0.3:
+                self.spawn_storm_cloud()
+            if random.random() < 0.4:
+                self.spawn_bird_flock()
+            self.spawn_timer = random.uniform(60, 180)
+        
+        # Update storms
+        self.storm_clouds = [storm for storm in self.storm_clouds if storm.update(dt)]
+        
+        # Update bird flocks
+        for flock in self.bird_flocks:
+            flock.update(dt, player_position)
+
+# =============================================================================
+# 🏁 RACING SYSTEM 🏁
+# =============================================================================
+
+class NavigationRing(Entity):
+    """Racing rings for point-to-point gameplay"""
+    
+    def __init__(self, position, ring_type='checkpoint', size=8):
+        super().__init__()
+        self.position = position
+        self.ring_type = ring_type
+        self.size = size
+        self.passed = False
+        
+        # Ring properties
+        if ring_type == 'checkpoint':
+            self.color_primary = color.rgb(0, 255, 100)
+            self.points = 100
+        elif ring_type == 'speed_ring':
+            self.color_primary = color.rgb(255, 100, 0)
+            self.points = 200
+        elif ring_type == 'precision_ring':
+            self.color_primary = color.rgb(100, 100, 255)
+            self.points = 300
+            self.size = size * 0.7
+        else:  # bonus_ring
+            self.color_primary = color.rgb(255, 255, 0)
+            self.points = 500
+        
+        self.create_ring_visual()
+        self.detection_radius = self.size * 0.8
+        
+        print(f"🎯 Navigation ring created: {ring_type}")
+    
+    def create_ring_visual(self):
+        """Create ring visual"""
+        # Outer ring
+        self.outer_ring = Entity(
+            parent=self,
+            model='cube',
+            color=self.color_primary,
+            scale=(self.size, 0.5, self.size)
+        )
+        
+        # Ring segments for detail
+        num_segments = 12
+        for i in range(num_segments):
+            angle = (i / num_segments) * 360
+            segment_x = math.cos(math.radians(angle)) * self.size * 0.5
+            segment_z = math.sin(math.radians(angle)) * self.size * 0.5
+            
+            segment = Entity(
+                parent=self,
+                model='cube',
+                color=self.color_primary,
+                scale=(0.8, 0.3, 0.8),
+                position=(segment_x, 0, segment_z),
+                rotation=(0, angle, 0)
+            )
+        
+        # Glow effect
+        self.glow_effect = Entity(
+            parent=self,
+            model='sphere',
+            color=color.rgba(self.color_primary.r, self.color_primary.g, self.color_primary.b, 50),
+            scale=self.size * 1.5
+        )
+    
+    def check_passage(self, position, velocity):
+        """Check if passed through ring"""
+        if self.passed:
+            return False
+        
+        distance_to_ring = distance(position, self.position)
+        
+        if distance_to_ring < self.detection_radius:
+            ring_plane_distance = abs((position - self.position).dot(Vec3(0, 1, 0)))
+            
+            if ring_plane_distance < 2.0:
+                self.passed = True
+                self.trigger_passage_effect()
+                return True
+        
+        return False
+    
+    def trigger_passage_effect(self):
+        """Create passage effect"""
+        self.outer_ring.color = color.white
+        self.outer_ring.animate('color', self.color_primary, duration=0.5)
+        
+        # Energy wave
+        energy_wave = Entity(
+            model='sphere',
+            color=color.rgba(self.color_primary.r, self.color_primary.g, self.color_primary.b, 100),
+            scale=1,
+            position=self.position,
+            parent=scene
+        )
+        
+        energy_wave.animate_scale(self.size * 3, duration=1.0)
+        energy_wave.animate('color', color.rgba(self.color_primary.r, self.color_primary.g, self.color_primary.b, 0), duration=1.0)
+        destroy(energy_wave, delay=1.1)
+        
+        print(f"✨ Ring passed! Points: {self.points}")
+    
+    def update(self, dt):
+        """Update ring animations"""
+        if self.passed:
+            return
+        
+        self.rotation_y += 30 * dt
+        
+        # Pulsing glow
+        pulse = math.sin(time.time() * 3) * 0.3 + 0.7
+        glow_alpha = int(50 * pulse)
+        self.glow_effect.color = color.rgba(
+            self.color_primary.r, 
+            self.color_primary.g, 
+            self.color_primary.b, 
+            glow_alpha
+        )
+
+class CollectionTarget(Entity):
+    """Collection targets for racing"""
+    
+    def __init__(self, position, target_type='orb', value=50):
+        super().__init__()
+        self.position = position
+        self.target_type = target_type
+        self.value = value
+        self.collected = False
+        
+        if target_type == 'orb':
+            self.base_color = color.rgb(100, 200, 255)
+        elif target_type == 'crystal':
+            self.base_color = color.rgb(255, 100, 200)
+        else:  # energy_cell
+            self.base_color = color.rgb(255, 255, 100)
+        
+        self.collection_radius = 3
+        self.create_target_visual()
+    
+    def create_target_visual(self):
+        """Create target visual"""
+        self.target_body = Entity(
+            parent=self,
+            model='sphere',
+            color=self.base_color,
+            scale=2
+        )
+        
+        self.energy_aura = Entity(
+            parent=self,
+            model='sphere',
+            color=color.rgba(self.base_color.r, self.base_color.g, self.base_color.b, 80),
+            scale=4
+        )
+    
+    def check_collection(self, position):
+        """Check if target collected"""
+        if self.collected:
+            return False
+        
+        distance_to_target = distance(position, self.position)
+        
+        if distance_to_target < self.collection_radius:
+            self.collected = True
+            self.trigger_collection_effect()
+            return True
+        
+        return False
+    
+    def trigger_collection_effect(self):
+        """Collection effect"""
+        self.target_body.animate_scale(6, duration=0.3)
+        self.target_body.animate('color', color.white, duration=0.3)
+        
+        self.visible = False
+        print(f"💎 Target collected! Value: {self.value}")
+    
+    def update(self, dt):
+        """Update target animations"""
+        if self.collected:
+            return
+        
+        self.target_body.rotation_y += 60 * dt
+        
+        # Pulsing aura
+        pulse = math.sin(time.time() * 4) * 0.3 + 0.7
+        aura_alpha = int(80 * pulse)
+        self.energy_aura.color = color.rgba(
+            self.base_color.r, 
+            self.base_color.g, 
+            self.base_color.b, 
+            aura_alpha
+        )
+
+class RaceCourse:
+    """Complete race course"""
+    
+    def __init__(self, course_name):
+        self.course_name = course_name
+        self.rings = []
+        self.targets = []
+        
+        self.current_ring_index = 0
+        self.course_active = False
+        self.total_score = 0
+        
+        self.generate_course()
+    
+    def generate_course(self):
+        """Generate race course"""
+        if self.course_name == 'Golden Gate Circuit':
+            # Golden Gate Bridge circuit
+            self.rings.append(NavigationRing(Vec3(-120, 40, 120), 'checkpoint', 10))
+            self.rings.append(NavigationRing(Vec3(-80, 35, 120), 'speed_ring', 8))
+            self.rings.append(NavigationRing(Vec3(-50, 50, 120), 'checkpoint', 10))
+            self.rings.append(NavigationRing(Vec3(-80, 45, 120), 'bonus_ring', 12))
+            
+            # Collection targets
+            self.targets.append(CollectionTarget(Vec3(-100, 60, 130), 'orb', 100))
+            self.targets.append(CollectionTarget(Vec3(-60, 80, 110), 'crystal', 150))
+        
+        elif self.course_name == 'Twin Peaks Challenge':
+            # Twin Peaks course
+            self.rings.append(NavigationRing(Vec3(-20, 30, -20), 'checkpoint', 12))
+            self.rings.append(NavigationRing(Vec3(0, 150, 0), 'precision_ring', 6))
+            self.rings.append(NavigationRing(Vec3(20, 80, 20), 'speed_ring', 10))
+            
+            self.targets.append(CollectionTarget(Vec3(0, 200, 0), 'crystal', 300))
+    
+    def start_course(self):
+        """Start the course"""
+        self.course_active = True
+        self.current_ring_index = 0
+        self.total_score = 0
+        
+        for ring in self.rings:
+            ring.passed = False
+        
+        for target in self.targets:
+            target.collected = False
+            target.visible = True
+        
+        print(f"🏁 Course '{self.course_name}' started!")
+    
+    def update(self, dt, player_position, player_velocity):
+        """Update course"""
+        if not self.course_active:
+            return
+        
+        # Update rings
+        for ring in self.rings:
+            ring.update(dt)
+        
+        # Update targets
+        for target in self.targets:
+            target.update(dt)
+        
+        # Check ring passages
+        if self.current_ring_index < len(self.rings):
+            current_ring = self.rings[self.current_ring_index]
+            
+            if current_ring.check_passage(player_position, player_velocity):
+                self.total_score += current_ring.points
+                self.current_ring_index += 1
+        
+        # Check target collections
+        for target in self.targets:
+            if target.check_collection(player_position):
+                self.total_score += target.value
+        
+        # Check completion
+        if self.current_ring_index >= len(self.rings):
+            self.complete_course()
+    
+    def complete_course(self):
+        """Complete course"""
+        self.course_active = False
+        print(f"🏁 Course completed! Final Score: {self.total_score}")
+
+class RacingManager:
+    """Manages racing system"""
+    
+    def __init__(self):
+        self.courses = {}
+        self.active_course = None
+        
+        # Create courses
+        self.courses['Golden Gate Circuit'] = RaceCourse('Golden Gate Circuit')
+        self.courses['Twin Peaks Challenge'] = RaceCourse('Twin Peaks Challenge')
+        
+        print("🏁 Racing Manager initialized")
+    
+    def start_course(self, course_name):
+        """Start a course"""
+        if course_name in self.courses:
+            self.active_course = self.courses[course_name]
+            self.active_course.start_course()
+            return True
+        return False
+    
+    def update(self, dt, player_position, player_velocity):
+        """Update active course"""
+        if self.active_course:
+            self.active_course.update(dt, player_position, player_velocity)
+    
+    def get_course_status(self):
+        """Get course status"""
+        if not self.active_course:
+            return None
+        
+        return {
+            'course_name': self.active_course.course_name,
+            'active': self.active_course.course_active,
+            'rings_completed': self.active_course.current_ring_index,
+            'total_rings': len(self.active_course.rings),
+            'score': self.active_course.total_score
+        }
+
+# =============================================================================
+# 🦅 ULTRA-REALISTIC FLYING CHARACTER 🦅
+# =============================================================================
+
+class RealisticFlyingCharacter(Entity):
+    """Ultra-realistic flying character with advanced controls"""
+    
+    def __init__(self, character_type='archaeopteryx', enhanced_physics=None):
+        super().__init__()
+        
+        self.character_type = character_type
+        self.enhanced_physics = enhanced_physics
+        self.base_scale = 2.5
+        
+        # Control system
+        self.control_scheme = 'realistic'
+        self.control_sensitivity = 1.0
+        self.control_smoothing = 0.85
+        
+        # Control inputs
+        self.pitch_input = 0
+        self.yaw_input = 0
+        self.roll_input = 0
+        self.throttle_input = 0
+        
+        # Character state
+        self.energy_level = 1.0
+        self.stamina = 1.0
+        self.stress_level = 0.0
+        
+        # Create model
+        self.create_realistic_model()
+        self.position = Vec3(-50, 60, 80)
+        
+        print(f"🦅 Realistic character created: {character_type}")
+    
+    def create_realistic_model(self):
+        """Create detailed model"""
         # Main body
         self.body = Entity(
-            parent=self, model='cube', color=base_color,
-            scale=(3 * scale_factor, 1.5 * scale_factor, 1 * scale_factor)
+            parent=self,
+            model='cube',
+            color=color.rgb(80, 60, 40),
+            scale=(2.0 * self.base_scale, 0.8 * self.base_scale, 1.2 * self.base_scale)
         )
         
-        # Head with long crest
+        # Head
         self.head = Entity(
-            parent=self, model='cube',
-            color=color.rgb(base_color.r + 20, base_color.g + 10, base_color.b + 10),
-            scale=(1.5 * scale_factor, 1 * scale_factor, 2 * scale_factor),
-            position=(0, 0.5 * scale_factor, 2 * scale_factor)
-        )
-        
-        # Crest
-        self.crest = Entity(
-            parent=self.head, model='cube',
-            color=color.rgb(base_color.r + 30, base_color.g + 20, base_color.b + 15),
-            scale=(0.5, 2 * scale_factor, 1),
-            position=(0, 1 * scale_factor, 0.5)
-        )
-        
-        # Beak
-        self.beak = Entity(
-            parent=self.head, model='cube', color=color.rgb(50, 50, 40),
-            scale=(0.3, 0.3, 1.5 * scale_factor),
-            position=(0, 0, 1.5 * scale_factor)
+            parent=self,
+            model='cube',
+            color=color.rgb(90, 70, 50),
+            scale=(1.0 * self.base_scale, 0.8 * self.base_scale, 0.8 * self.base_scale),
+            position=(0, 0.2 * self.base_scale, 1.2 * self.base_scale)
         )
         
         # Eyes
-        for eye_x in [-0.4, 0.4]:
+        for eye_x in [-0.3, 0.3]:
             eye = Entity(
-                parent=self.head, model='sphere', color=color.yellow,
-                scale=0.3 * scale_factor,
-                position=(eye_x * scale_factor, 0.2, 0.5)
+                parent=self.head,
+                model='sphere',
+                color=color.orange,
+                scale=0.25 * self.base_scale,
+                position=(eye_x * self.base_scale, 0.2, 0.3)
             )
         
         # Wings
-        wing_length = self.species_config['wing_span'] / 2
+        wing_length = 4 * self.base_scale
         
         self.left_wing = Entity(
-            parent=self, model='cube',
-            color=color.rgba(base_color.r, base_color.g, base_color.b, 220),
-            scale=(wing_length, 0.2 * scale_factor, 2 * scale_factor),
-            position=(-wing_length/2 - 1, 0, 0), rotation=(0, 0, 10)
+            parent=self,
+            model='cube',
+            color=color.rgba(80, 60, 40, 240),
+            scale=(wing_length, 0.15 * self.base_scale, 2.0 * self.base_scale),
+            position=(-wing_length/2 - 0.8, 0, 0),
+            rotation=(0, 0, 8)
         )
         
         self.right_wing = Entity(
-            parent=self, model='cube',
-            color=color.rgba(base_color.r, base_color.g, base_color.b, 220),
-            scale=(wing_length, 0.2 * scale_factor, 2 * scale_factor),
-            position=(wing_length/2 + 1, 0, 0), rotation=(0, 0, -10)
-        )
-        
-        # Neck
-        self.neck = Entity(
-            parent=self, model='cube', color=base_color,
-            scale=(0.8 * scale_factor, 0.8 * scale_factor, 1.5 * scale_factor),
-            position=(0, 0.3 * scale_factor, 1 * scale_factor)
+            parent=self,
+            model='cube',
+            color=color.rgba(80, 60, 40, 240),
+            scale=(wing_length, 0.15 * self.base_scale, 2.0 * self.base_scale),
+            position=(wing_length/2 + 0.8, 0, 0),
+            rotation=(0, 0, -8)
         )
         
         # Tail
         self.tail = Entity(
-            parent=self, model='cube', color=base_color,
-            scale=(0.5 * scale_factor, 0.5 * scale_factor, 2 * scale_factor),
-            position=(0, 0, -2.5 * scale_factor)
+            parent=self,
+            model='cube',
+            color=color.rgb(70, 50, 30),
+            scale=(0.6 * self.base_scale, 0.4 * self.base_scale, 3.0 * self.base_scale),
+            position=(0, 0, -2.5 * self.base_scale)
         )
     
-    def update(self, nearby_pterodactyls, player_position):
-        """Update pterodactyl behavior and animation"""
-        dt = time.dt
+    def update_advanced_controls(self, dt):
+        """Advanced control system"""
+        # Raw inputs
+        raw_pitch = 0
+        raw_yaw = 0
+        raw_roll = 0
+        raw_throttle = 0
         
-        # Update AI physics
-        speed, flight_mode = self.physics.update_ai_flight(dt, nearby_pterodactyls, player_position)
+        if held_keys['w']:
+            raw_pitch = 1
+        elif held_keys['s']:
+            raw_pitch = -1
         
-        # Update animations
-        self.update_animations(speed, flight_mode)
+        if held_keys['a']:
+            raw_yaw = 1
+            raw_roll = 0.5
+        elif held_keys['d']:
+            raw_yaw = -1
+            raw_roll = -0.5
         
-        # Pterodactyl calls
-        self.update_vocalizations(dt)
+        if held_keys['space']:
+            raw_throttle = 1
         
-        # Orient towards movement direction
-        if distance(self.physics.velocity, Vec3(0, 0, 0)) > 1:
-            forward = self.physics.velocity.normalized()
-            self.look_at(self.position + forward, up=Vec3(0, 1, 0))
+        if held_keys['shift']:
+            raw_pitch -= 0.8
         
-        return flight_mode
-    
-    def update_animations(self, speed, flight_mode):
-        """Update pterodactyl wing animations and body language"""
-        base_frequency = 2.0 / self.species_config['wing_span']
-        speed_factor = max(0.5, speed / self.species_config['cruise_speed'])
+        # Control scheme modifications
+        if self.control_scheme == 'realistic':
+            effectiveness = self.get_control_effectiveness()
+            raw_pitch *= effectiveness * self.control_sensitivity
+            raw_yaw *= effectiveness * self.control_sensitivity * 0.8
+            raw_roll *= effectiveness * self.control_sensitivity * 1.2
         
-        self.wing_beat_time += time.dt * base_frequency * speed_factor
+        # Apply smoothing
+        self.pitch_input = self.lerp_control(self.pitch_input, raw_pitch, dt)
+        self.yaw_input = self.lerp_control(self.yaw_input, raw_yaw, dt)
+        self.roll_input = self.lerp_control(self.roll_input, raw_roll, dt)
+        self.throttle_input = self.lerp_control(self.throttle_input, raw_throttle, dt)
         
-        if speed > self.species_config['stall_speed']:
-            wing_flap = math.sin(self.wing_beat_time) * 25
-            
-            if flight_mode == 'thermal':
-                base_angle = 5
-                wing_flap *= 0.3
-            elif flight_mode == 'hunt':
-                base_angle = 15
-                wing_flap *= 1.2
-            else:
-                base_angle = 10
-            
-            self.left_wing.rotation_z = base_angle + wing_flap
-            self.right_wing.rotation_z = -base_angle - wing_flap
-        else:
-            glide_adjust = math.sin(time.time() * 0.5) * 3
-            self.left_wing.rotation_z = 5 + glide_adjust
-            self.right_wing.rotation_z = -5 - glide_adjust
-        
-        # Head movement based on behavior
-        if flight_mode == 'hunt':
-            head_bob = math.sin(time.time() * 3) * 5
-            self.head.rotation_x = -10 + head_bob
-        elif flight_mode == 'flee':
-            head_scan = math.sin(time.time() * 4) * 15
-            self.head.rotation_y = head_scan
-        else:
-            self.head.rotation_x = lerp(self.head.rotation_x, 0, 2 * time.dt)
-            self.head.rotation_y = lerp(self.head.rotation_y, 0, 2 * time.dt)
-    
-    def update_vocalizations(self, dt):
-        """Handle pterodactyl calls and sounds"""
-        self.call_timer -= dt
-        
-        if self.call_timer <= 0:
-            self.emit_call()
-            self.call_timer = random.uniform(8, 20)
-    
-    def emit_call(self):
-        """Visual representation of pterodactyl call"""
-        call_effect = Entity(
-            model='sphere', color=color.rgba(255, 255, 0, 100),
-            scale=1, position=self.position, parent=scene
-        )
-        
-        call_effect.animate_scale(5, duration=2)
-        call_effect.animate('color', color.rgba(255, 255, 0, 0), duration=2)
-        destroy(call_effect, delay=2.1)
-
-class PterodactylFlock:
-    """Manages groups of pterodactyls with collective behavior"""
-    
-    def __init__(self, species_type, flock_size, center_position):
-        self.species_type = species_type
-        self.pterodactyls = []
-        self.center_position = center_position
-        self.flock_behavior = 'patrol'
-        
-        for i in range(flock_size):
-            offset = Vec3(
-                random.uniform(-20, 20),
-                random.uniform(-10, 10),
-                random.uniform(-20, 20)
+        # Apply to physics
+        if self.enhanced_physics:
+            self.enhanced_physics.apply_control_input(
+                self.pitch_input, self.yaw_input, self.roll_input, dt
             )
-            
-            pterodactyl = Pterodactyl(species_type, center_position + offset)
-            self.pterodactyls.append(pterodactyl)
     
-    def update(self, player_position, other_flocks=[]):
-        """Update entire flock behavior"""
-        for pterodactyl in self.pterodactyls:
-            nearby_pterodactyls = self.get_nearby_pterodactyls(pterodactyl, 50)
-            flight_mode = pterodactyl.update(nearby_pterodactyls, player_position)
-        
-        self.update_flock_behavior(player_position)
+    def lerp_control(self, current, target, dt):
+        """Smooth control interpolation"""
+        return current + (target - current) * (1 - self.control_smoothing) * 10 * dt
     
-    def get_nearby_pterodactyls(self, target_pterodactyl, radius):
-        """Get pterodactyls within radius of target"""
-        nearby = []
+    def get_control_effectiveness(self):
+        """Calculate control effectiveness"""
+        base_effectiveness = 1.0
         
-        for pterodactyl in self.pterodactyls:
-            if pterodactyl != target_pterodactyl:
-                dist = distance(target_pterodactyl.position, pterodactyl.position)
-                if dist < radius:
-                    nearby.append(pterodactyl)
+        # Energy factor
+        base_effectiveness *= (0.5 + self.energy_level * 0.5)
         
-        return nearby
+        # Stress factor
+        base_effectiveness *= (1.0 - self.stress_level * 0.3)
+        
+        return max(0.1, min(1.5, base_effectiveness))
     
-    def update_flock_behavior(self, player_position):
-        """Coordinate flock-level decisions"""
-        flock_center = self.get_flock_center()
-        player_distance = distance(flock_center, player_position)
-        
-        if player_distance < 30:
-            if self.species_type == 'dimorphodon':
-                self.flock_behavior = 'hunting'
-            else:
-                self.flock_behavior = 'fleeing'
+    def update_realistic_animations(self, dt):
+        """Update animations"""
+        # Get flight data
+        if self.enhanced_physics:
+            speed = self.enhanced_physics.ground_speed
+            climb_rate = self.enhanced_physics.climb_rate
         else:
-            self.flock_behavior = 'patrol'
+            speed = 15  # Default
+            climb_rate = 0
+        
+        # Wing animation
+        if speed < 8:
+            wing_frequency = 6.0
+            wing_amplitude = 35
+        elif speed > 20:
+            wing_frequency = 1.0
+            wing_amplitude = 10
+        else:
+            wing_frequency = 3.0
+            wing_amplitude = 20
+        
+        # Calculate wing positions
+        wing_time = time.time() * wing_frequency
+        base_flap = math.sin(wing_time) * wing_amplitude
+        
+        # Apply wing rotations
+        self.left_wing.rotation_z = 8 + base_flap + self.roll_input * 10
+        self.right_wing.rotation_z = -8 - base_flap - self.roll_input * 10
+        
+        # Body attitude
+        if hasattr(self.enhanced_physics, 'velocity'):
+            velocity = self.enhanced_physics.velocity
+            if distance(velocity, Vec3(0, 0, 0)) > 1:
+                pitch_angle = math.degrees(math.atan2(-velocity.y, abs(velocity.z) + 0.1))
+                self.rotation_x = pitch_angle
+        
+        self.rotation_y += self.yaw_input * 50 * dt
+        self.rotation_z = self.roll_input * 35
     
-    def get_flock_center(self):
-        """Calculate the center position of the flock"""
-        if not self.pterodactyls:
-            return self.center_position
+    def update(self, dt):
+        """Main update"""
+        # Controls
+        self.update_advanced_controls(dt)
         
-        total_pos = Vec3(0, 0, 0)
-        for pterodactyl in self.pterodactyls:
-            total_pos += pterodactyl.position
+        # Physics
+        if self.enhanced_physics:
+            physics_data = self.enhanced_physics.update(dt)
+        else:
+            physics_data = {'speed': 0, 'altitude': self.position.y}
         
-        return total_pos / len(self.pterodactyls)
-
-class PterodactylEcosystem:
-    """Manages the entire pterodactyl ecosystem in San Francisco"""
+        # Animations
+        self.update_realistic_animations(dt)
+        
+        # Keep above ground
+        if self.y < 1:
+            self.y = 1
+            if hasattr(self.enhanced_physics, 'velocity'):
+                self.enhanced_physics.velocity.y = max(0, self.enhanced_physics.velocity.y)
+        
+        return physics_data
     
-    def __init__(self):
-        self.flocks = []
-        self.create_ecosystem()
-    
-    def create_ecosystem(self):
-        """Create multiple flocks around San Francisco"""
+    def set_control_scheme(self, scheme):
+        """Change control scheme"""
+        self.control_scheme = scheme
         
-        # Pteranodon flock around Golden Gate Bridge
-        golden_gate_flock = PterodactylFlock('pteranodon', 6, Vec3(-80, 80, 120))
-        self.flocks.append(golden_gate_flock)
+        if scheme == 'realistic':
+            self.control_sensitivity = 1.0
+            self.control_smoothing = 0.85
+        elif scheme == 'arcade':
+            self.control_sensitivity = 1.5
+            self.control_smoothing = 0.6
+        elif scheme == 'expert':
+            self.control_sensitivity = 0.8
+            self.control_smoothing = 0.95
         
-        # Quetzalcoatlus pair over Twin Peaks
-        giant_flock = PterodactylFlock('quetzalcoatlus', 2, Vec3(0, 120, 0))
-        self.flocks.append(giant_flock)
-        
-        # Dimorphodon pack hunters around Alcatraz
-        hunter_flock = PterodactylFlock('dimorphodon', 8, Vec3(-20, 60, 100))
-        self.flocks.append(hunter_flock)
-        
-        # Mixed flock over downtown SF
-        downtown_flock = PterodactylFlock('pteranodon', 4, Vec3(-45, 90, 45))
-        self.flocks.append(downtown_flock)
-        
-        print(f"🦕 Pterodactyl ecosystem created with {len(self.flocks)} flocks")
-        print(f"Total pterodactyls: {sum(len(flock.pterodactyls) for flock in self.flocks)}")
-    
-    def update(self, player_position):
-        """Update the entire ecosystem"""
-        for flock in self.flocks:
-            flock.update(player_position, self.flocks)
-    
-    def get_all_pterodactyls(self):
-        """Get list of all pterodactyls in the ecosystem"""
-        all_pterodactyls = []
-        for flock in self.flocks:
-            all_pterodactyls.extend(flock.pterodactyls)
-        return all_pterodactyls
+        print(f"🎮 Control scheme: {scheme}")
 
 # =============================================================================
-# 🌉 SAN FRANCISCO WORLD - GOLDEN GATE BRIDGE & LANDMARKS 🌉
+# 🌉 SAN FRANCISCO WORLD 🌉
 # =============================================================================
 
 class SanFranciscoTerrain(Entity):
-    """Accurate San Francisco topography with iconic hills and bay"""
+    """Accurate San Francisco terrain"""
     
     def __init__(self, size=400, resolution=80):
         super().__init__()
         self.size = size
         self.resolution = resolution
         
-        # San Francisco specific parameters
+        # SF features
         self.sf_features = {
             'twin_peaks': {'pos': (0, 0), 'height': 280, 'radius': 25},
-            'nob_hill': {'pos': (-40, 30), 'height': 104, 'radius': 15},
-            'russian_hill': {'pos': (-35, 45), 'height': 91, 'radius': 12},
             'telegraph_hill': {'pos': (-60, 60), 'height': 84, 'radius': 10},
-            'pacific_heights': {'pos': (-70, 20), 'height': 110, 'radius': 20},
-            'potrero_hill': {'pos': (40, -30), 'height': 68, 'radius': 18},
-            'bernal_heights': {'pos': (35, -60), 'height': 80, 'radius': 15},
+            'nob_hill': {'pos': (-40, 30), 'height': 104, 'radius': 15},
         }
         
-        # Golden Gate Bridge location
         self.golden_gate_pos = (-80, 120)
         self.bay_center = (0, 80)
         
-        self.generate_sf_terrain()
-        self.create_sf_mesh()
+        self.generate_terrain()
     
-    def generate_sf_terrain(self):
-        """Generate San Francisco's famous hills and topography"""
+    def generate_terrain(self):
+        """Generate SF terrain"""
         self.height_map = []
         
         for i in range(self.resolution + 1):
@@ -595,10 +1006,9 @@ class SanFranciscoTerrain(Entity):
                 x = (i - self.resolution/2) * self.size / self.resolution
                 z = (j - self.resolution/2) * self.size / self.resolution
                 
-                # Base terrain
                 height = 0
                 
-                # Add San Francisco hills
+                # Add SF hills
                 for hill_name, hill_data in self.sf_features.items():
                     hill_x, hill_z = hill_data['pos']
                     hill_height = hill_data['height']
@@ -609,32 +1019,25 @@ class SanFranciscoTerrain(Entity):
                         hill_factor = max(0, 1 - (dist / (hill_radius * 2))**2)
                         height += hill_height * hill_factor
                 
-                # San Francisco Bay (negative elevation for water)
+                # Bay area
                 bay_dist = math.sqrt((x - self.bay_center[0])**2 + (z - self.bay_center[1])**2)
                 if bay_dist < 60:
                     bay_factor = max(0, 1 - (bay_dist / 60)**3)
                     height -= 20 * bay_factor
                 
-                # Pacific Ocean (west side)
-                if x < -120:
-                    ocean_factor = max(0, (x + 120) / -20)
-                    height -= 15 * ocean_factor
-                
-                # Add noise for realistic terrain variation
+                # Add noise
                 height += pnoise2(x * 0.01, z * 0.01) * 8
-                height += pnoise2(x * 0.03, z * 0.03) * 3
-                
-                # Ensure minimum ground level
                 height = max(height, -25)
                 
                 row.append(height)
             self.height_map.append(row)
+        
+        self.create_mesh()
     
-    def create_sf_mesh(self):
-        """Create terrain mesh with San Francisco color scheme"""
+    def create_mesh(self):
+        """Create terrain mesh"""
         vertices = []
         triangles = []
-        uvs = []
         colors = []
         
         for i in range(self.resolution + 1):
@@ -644,21 +1047,16 @@ class SanFranciscoTerrain(Entity):
                 y = self.height_map[i][j]
                 
                 vertices.append(Vec3(x, y, z))
-                uvs.append((i/self.resolution, j/self.resolution))
                 
-                # San Francisco color scheme
+                # Color based on height
                 if y < -5:
-                    colors.append(color.rgb(0.1, 0.3, 0.6))  # Bay water
+                    colors.append(color.rgb(0.1, 0.3, 0.6))
                 elif y < 0:
-                    colors.append(color.rgb(0.2, 0.5, 0.8))  # Shallow water
-                elif y < 20:
-                    colors.append(color.rgb(0.8, 0.7, 0.5))  # Beach/low areas
+                    colors.append(color.rgb(0.2, 0.5, 0.8))
                 elif y < 50:
-                    colors.append(color.rgb(0.4, 0.6, 0.3))  # Low hills
-                elif y < 100:
-                    colors.append(color.rgb(0.5, 0.5, 0.4))  # Mid hills
+                    colors.append(color.rgb(0.4, 0.6, 0.3))
                 else:
-                    colors.append(color.rgb(0.6, 0.6, 0.6))  # High peaks
+                    colors.append(color.rgb(0.6, 0.6, 0.6))
         
         # Generate triangles
         for i in range(self.resolution):
@@ -670,1206 +1068,422 @@ class SanFranciscoTerrain(Entity):
                 
                 triangles.extend([v1, v2, v3, v2, v4, v3])
         
-        self.model = Mesh(vertices=vertices, triangles=triangles, uvs=uvs, colors=colors)
+        self.model = Mesh(vertices=vertices, triangles=triangles, colors=colors)
         self.model.generate()
-    
-    def get_height_at_position(self, x, z):
-        """Get terrain height at world position"""
-        map_x = int((x + self.size/2) * self.resolution / self.size)
-        map_z = int((z + self.size/2) * self.resolution / self.size)
-        
-        map_x = max(0, min(self.resolution, map_x))
-        map_z = max(0, min(self.resolution, map_z))
-        
-        return self.height_map[map_x][map_z]
 
 class GoldenGateBridge(Entity):
-    """🌉 DETAILED 3D MODEL OF THE ICONIC GOLDEN GATE BRIDGE 🌉"""
+    """Golden Gate Bridge model"""
     
     def __init__(self, position=Vec3(-80, 15, 120)):
         super().__init__()
         self.position = position
-        self.bridge_length = 120
-        self.bridge_width = 8
-        self.tower_height = 80
         
-        self.create_golden_gate_bridge()
-    
-    def create_golden_gate_bridge(self):
-        """Build the complete Golden Gate Bridge structure"""
-        
-        # Main bridge deck
+        # Bridge deck
         self.deck = Entity(
-            parent=self, model='cube',
-            color=color.rgb(196, 76, 25),  # International Orange
-            scale=(self.bridge_length, 2, self.bridge_width),
+            parent=self,
+            model='cube',
+            color=color.rgb(196, 76, 25),
+            scale=(120, 2, 8),
             position=(0, 25, 0)
         )
         
-        # North Tower
+        # Towers
         self.north_tower = Entity(
-            parent=self, model='cube',
+            parent=self,
+            model='cube',
             color=color.rgb(196, 76, 25),
-            scale=(6, self.tower_height, 4),
-            position=(-30, self.tower_height/2, 0)
+            scale=(6, 80, 4),
+            position=(-30, 40, 0)
         )
         
-        # South Tower  
         self.south_tower = Entity(
-            parent=self, model='cube',
+            parent=self,
+            model='cube',
             color=color.rgb(196, 76, 25),
-            scale=(6, self.tower_height, 4),
-            position=(30, self.tower_height/2, 0)
+            scale=(6, 80, 4),
+            position=(30, 40, 0)
         )
         
-        # Main suspension cables
-        self.create_suspension_cables()
-        
-        # Bridge approaches
-        self.create_bridge_approaches()
-        
-        # Art Deco details
-        self.add_bridge_details()
-    
-    def create_suspension_cables(self):
-        """Create the iconic suspension cable system"""
-        cable_height = self.tower_height - 5
-        
-        # Main cables
+        # Cables
         for side in [-2, 2]:
-            main_cable = Entity(
-                parent=self, model='cube',
+            cable = Entity(
+                parent=self,
+                model='cube',
                 color=color.rgb(150, 150, 150),
-                scale=(self.bridge_length + 20, 0.5, 0.5),
-                position=(0, cable_height, side)
+                scale=(140, 0.5, 0.5),
+                position=(0, 75, side)
             )
-            
-            # Vertical suspension cables
-            for i in range(-50, 51, 10):
-                cable_length = cable_height - 25 + abs(i) * 0.1
-                vertical_cable = Entity(
-                    parent=self, model='cube',
-                    color=color.rgb(120, 120, 120),
-                    scale=(0.2, cable_length, 0.2),
-                    position=(i, 25 + cable_length/2, side)
-                )
-    
-    def create_bridge_approaches(self):
-        """Create the approach spans and roadways"""
-        # Marin approach (north)
-        marin_approach = Entity(
-            parent=self, model='cube',
-            color=color.rgb(160, 160, 160),
-            scale=(40, 1.5, self.bridge_width),
-            position=(-80, 20, 0)
-        )
-        
-        # San Francisco approach (south)
-        sf_approach = Entity(
-            parent=self, model='cube',
-            color=color.rgb(160, 160, 160),
-            scale=(40, 1.5, self.bridge_width),
-            position=(80, 20, 0)
-        )
-    
-    def add_bridge_details(self):
-        """Add Art Deco architectural details"""
-        # Tower tops with Art Deco styling
-        for tower_x in [-30, 30]:
-            tower_top = Entity(
-                parent=self, model='cube',
-                color=color.rgb(180, 60, 20),
-                scale=(8, 4, 6),
-                position=(tower_x, self.tower_height + 2, 0)
-            )
-            
-            # Tower lights
-            for light_y in range(10, int(self.tower_height), 15):
-                light = Entity(
-                    parent=self, model='sphere',
-                    color=color.yellow, scale=0.5,
-                    position=(tower_x + 3.5, light_y, 0)
-                )
-
-class SanFranciscoLandmarks:
-    """🏢 ICONIC SAN FRANCISCO LANDMARKS 🏢"""
-    
-    def __init__(self, terrain):
-        self.terrain = terrain
-        self.landmarks = []
-        self.create_landmarks()
-    
-    def create_landmarks(self):
-        """Create famous SF landmarks"""
-        
-        # Alcatraz Island
-        alcatraz_pos = Vec3(-20, 5, 100)
-        self.create_alcatraz(alcatraz_pos)
-        
-        # Transamerica Pyramid
-        pyramid_pos = Vec3(-45, 50, 45)
-        self.create_transamerica_pyramid(pyramid_pos)
-        
-        # Coit Tower
-        coit_pos = Vec3(-60, 84, 60)
-        self.create_coit_tower(coit_pos)
-        
-        # Lombard Street
-        self.create_lombard_street()
-        
-        # SF-Oakland Bay Bridge
-        self.create_bay_bridge()
-    
-    def create_alcatraz(self, position):
-        """The infamous island prison"""
-        island = Entity(
-            model='cube', color=color.rgb(0.5, 0.4, 0.3),
-            scale=(15, 3, 12), position=position
-        )
-        
-        prison = Entity(
-            model='cube', color=color.rgb(0.6, 0.6, 0.5),
-            scale=(8, 6, 10), position=position + Vec3(0, 4.5, 0)
-        )
-        
-        self.landmarks.extend([island, prison])
-    
-    def create_transamerica_pyramid(self, position):
-        """The iconic pyramid skyscraper"""
-        base = Entity(
-            model='cube', color=color.rgb(0.9, 0.9, 0.8),
-            scale=(8, 20, 8), position=position + Vec3(0, 10, 0)
-        )
-        
-        pyramid = Entity(
-            model='cube', color=color.rgb(0.95, 0.95, 0.85),
-            scale=(6, 30, 6), position=position + Vec3(0, 35, 0)
-        )
-        
-        self.landmarks.extend([base, pyramid])
-    
-    def create_coit_tower(self, position):
-        """The Art Deco tower on Telegraph Hill"""
-        tower = Entity(
-            model='cube', color=color.rgb(0.8, 0.8, 0.7),
-            scale=(3, 25, 3), position=position + Vec3(0, 12.5, 0)
-        )
-        
-        tower_top = Entity(
-            model='cube', color=color.rgb(0.7, 0.7, 0.6),
-            scale=(4, 3, 4), position=position + Vec3(0, 26.5, 0)
-        )
-        
-        self.landmarks.extend([tower, tower_top])
-    
-    def create_lombard_street(self):
-        """The world's crookedest street"""
-        for i in range(8):
-            angle = i * 45
-            x = -35 + math.sin(math.radians(angle)) * 3
-            z = 45 + i * 2
-            y = self.terrain.get_height_at_position(x, z)
-            
-            road_segment = Entity(
-                model='cube', color=color.rgb(0.3, 0.3, 0.3),
-                scale=(2, 0.5, 3), position=Vec3(x, y + 0.25, z),
-                rotation_y=angle
-            )
-            self.landmarks.append(road_segment)
-    
-    def create_bay_bridge(self):
-        """San Francisco-Oakland Bay Bridge"""
-        bridge_y = 15
-        
-        west_span = Entity(
-            model='cube', color=color.rgb(120, 120, 120),
-            scale=(80, 2, 6), position=Vec3(40, bridge_y, 80)
-        )
-        
-        east_span = Entity(
-            model='cube', color=color.rgb(120, 120, 120),
-            scale=(60, 2, 6), position=Vec3(110, bridge_y, 80)
-        )
-        
-        for tower_x in [0, 80, 140]:
-            tower = Entity(
-                model='cube', color=color.rgb(100, 100, 100),
-                scale=(4, 40, 3), position=Vec3(tower_x, 35, 80)
-            )
-            self.landmarks.append(tower)
-        
-        self.landmarks.extend([west_span, east_span])
 
 # =============================================================================
-# 🦅 PREHISTORIC PLAYER CREATURE 🦅
+# 🎮 ENHANCED UI SYSTEM 🎮
 # =============================================================================
 
-class PrehistoricPlayer(Entity):
-    """🦅 Player's flying creature - enhanced for prehistoric San Francisco 🦅"""
-    
-    def __init__(self, creature_type='archaeopteryx'):
-        super().__init__()
-        
-        self.creature_type = creature_type
-        self.config = self.get_default_config()
-        
-        # Enhanced scale for epic visibility
-        self.base_scale = 2.0
-        
-        # Create the player creature model
-        self.create_player_model()
-        
-        # Flight state
-        self.velocity = Vec3(0, 0, 0)
-        self.pitch_input = 0
-        self.yaw_input = 0
-        self.roll_input = 0
-        
-        # Enhanced abilities
-        self.energy = 1.0
-        self.stamina = 1.0
-        self.has_fire_breath = (creature_type == 'dragon')
-        
-        # Start position near Golden Gate Bridge
-        self.position = Vec3(-50, 60, 80)
-        
-        # Enhanced visual effects
-        self.create_epic_effects()
-        
-        # Interaction state
-        self.nearby_pterodactyls = []
-        self.reputation = 0
-    
-    def get_default_config(self):
-        """Default configuration for player creature"""
-        return {
-            'max_speed': 35, 'glide_ratio': 5.0, 'lift_coefficient': 1.0,
-            'drag_coefficient': 0.015, 'mass': 8, 'wing_area': 4.0,
-            'max_pitch_rate': 3.0, 'max_yaw_rate': 3.0, 'max_roll_angle': 0.8,
-        }
-    
-    def create_player_model(self):
-        """Create epic player creature model"""
-        if self.creature_type == 'archaeopteryx':
-            self.create_archaeopteryx_model()
-        elif self.creature_type == 'dragon':
-            self.create_dragon_model()
-        else:
-            self.create_archaeopteryx_model()
-    
-    def create_archaeopteryx_model(self):
-        """Create Archaeopteryx - the first bird"""
-        # Body with feathers
-        self.body = Entity(
-            parent=self, model='cube', color=color.rgb(80, 60, 40),
-            scale=(2.5 * self.base_scale, 1.0 * self.base_scale, 1.5 * self.base_scale)
-        )
-        
-        # Feathered head
-        self.head = Entity(
-            parent=self, model='cube', color=color.rgb(90, 70, 50),
-            scale=(1.2 * self.base_scale, 1.0 * self.base_scale, 1.0 * self.base_scale),
-            position=(0, 0.3 * self.base_scale, 1.2 * self.base_scale)
-        )
-        
-        # Sharp predator eyes
-        for eye_x in [-0.4, 0.4]:
-            eye = Entity(
-                parent=self.head, model='sphere', color=color.orange,
-                scale=0.25 * self.base_scale,
-                position=(eye_x * self.base_scale, 0.2, 0.3)
-            )
-        
-        # Toothed beak
-        self.beak = Entity(
-            parent=self.head, model='cube', color=color.rgb(40, 40, 30),
-            scale=(0.3, 0.3, 0.8 * self.base_scale),
-            position=(0, 0, 0.8 * self.base_scale)
-        )
-        
-        # Feathered wings
-        wing_length = 4 * self.base_scale
-        
-        self.left_wing = Entity(
-            parent=self, model='cube', color=color.rgba(80, 60, 40, 240),
-            scale=(wing_length, 0.15 * self.base_scale, 2 * self.base_scale),
-            position=(-wing_length/2 - 0.8, 0, 0), rotation=(0, 0, 12)
-        )
-        
-        self.right_wing = Entity(
-            parent=self, model='cube', color=color.rgba(80, 60, 40, 240),
-            scale=(wing_length, 0.15 * self.base_scale, 2 * self.base_scale),
-            position=(wing_length/2 + 0.8, 0, 0), rotation=(0, 0, -12)
-        )
-        
-        # Long feathered tail
-        self.tail = Entity(
-            parent=self, model='cube', color=color.rgb(70, 50, 30),
-            scale=(0.6 * self.base_scale, 0.4 * self.base_scale, 3 * self.base_scale),
-            position=(0, 0, -2.5 * self.base_scale)
-        )
-    
-    def create_dragon_model(self):
-        """Create small dragon model"""
-        # Dragon body
-        self.body = Entity(
-            parent=self, model='cube', color=color.rgb(120, 20, 20),
-            scale=(3 * self.base_scale, 1.2 * self.base_scale, 1.8 * self.base_scale)
-        )
-        
-        # Dragon head with horns
-        self.head = Entity(
-            parent=self, model='cube', color=color.rgb(140, 30, 30),
-            scale=(1.5 * self.base_scale, 1.2 * self.base_scale, 1.2 * self.base_scale),
-            position=(0, 0.4 * self.base_scale, 1.5 * self.base_scale)
-        )
-        
-        # Dragon wings
-        wing_length = 5 * self.base_scale
-        
-        self.left_wing = Entity(
-            parent=self, model='cube', color=color.rgba(100, 15, 15, 220),
-            scale=(wing_length, 0.1 * self.base_scale, 3 * self.base_scale),
-            position=(-wing_length/2 - 1, 0, 0), rotation=(0, 0, 15)
-        )
-        
-        self.right_wing = Entity(
-            parent=self, model='cube', color=color.rgba(100, 15, 15, 220),
-            scale=(wing_length, 0.1 * self.base_scale, 3 * self.base_scale),
-            position=(wing_length/2 + 1, 0, 0), rotation=(0, 0, -15)
-        )
-    
-    def create_epic_effects(self):
-        """Create enhanced visual effects"""
-        # Enhanced particle trail
-        self.trail_entities = []
-        for i in range(10):
-            trail_particle = Entity(
-                parent=scene, model='cube',
-                color=color.rgba(255, 200, 100, 140 - i*14),
-                scale=0.4 - i*0.03, visible=False
-            )
-            self.trail_entities.append(trail_particle)
-        
-        # Energy aura
-        self.energy_aura = Entity(
-            parent=self, model='sphere',
-            color=color.rgba(100, 200, 255, 50),
-            scale=4, visible=False
-        )
-    
-    def update(self, nearby_pterodactyls=[]):
-        """Update player creature with enhanced interactions"""
-        dt = time.dt
-        
-        # Store nearby pterodactyls
-        self.nearby_pterodactyls = nearby_pterodactyls
-        
-        # Handle input
-        self.handle_enhanced_input()
-        
-        # Apply physics
-        self.apply_enhanced_physics(dt)
-        
-        # Update animations and effects
-        speed = distance(self.velocity, Vec3(0, 0, 0))
-        self.update_epic_animations(speed)
-        self.update_epic_effects(speed)
-        
-        # Update abilities
-        self.update_abilities(dt)
-        
-        # Keep above ground/water
-        if self.y < 1:
-            self.y = 1
-            self.velocity.y = max(0, self.velocity.y)
-        
-        return {
-            'speed': speed, 'altitude': self.position.y,
-            'heading': self.rotation_y, 'energy': self.energy,
-            'stamina': self.stamina, 'reputation': self.reputation
-        }
-    
-    def handle_enhanced_input(self):
-        """Enhanced input handling with special abilities"""
-        self.pitch_input = 0
-        self.yaw_input = 0
-        self.roll_input = 0
-        
-        if held_keys['w']:
-            self.pitch_input = 1
-        elif held_keys['s']:
-            self.pitch_input = -1
-        
-        if held_keys['a']:
-            self.yaw_input = 1
-            self.roll_input = 1
-        elif held_keys['d']:
-            self.yaw_input = -1
-            self.roll_input = -1
-        
-        # Enhanced abilities
-        if held_keys['space']:
-            self.pitch_input += 0.6
-            self.use_stamina(time.dt * 0.5)
-        
-        if held_keys['shift']:
-            self.pitch_input -= 1.0
-            
-        # Special abilities
-        if held_keys['f'] and self.has_fire_breath:
-            self.breathe_fire()
-        
-        if held_keys['e']:
-            self.thermal_boost()
-    
-    def apply_enhanced_physics(self, dt):
-        """Enhanced physics for prehistoric flight"""
-        # Gravity
-        gravity = Vec3(0, -9.8, 0)
-        
-        # Forward thrust based on pitch
-        thrust_force = Vec3(0, 0, max(0, -self.pitch_input * 15))
-        
-        # Rotate thrust based on yaw
-        yaw_rad = math.radians(self.rotation_y)
-        thrust_force = Vec3(
-            thrust_force.z * math.sin(yaw_rad),
-            thrust_force.y,
-            thrust_force.z * math.cos(yaw_rad)
-        )
-        
-        # Lift force
-        speed = distance(self.velocity, Vec3(0, 0, 0))
-        if speed > 0:
-            lift_magnitude = self.config['lift_coefficient'] * speed * 0.15
-            lift_force = Vec3(0, lift_magnitude, 0)
-        else:
-            lift_force = Vec3(0, 0, 0)
-        
-        # Drag force
-        drag_force = -self.velocity * self.config['drag_coefficient'] * speed
-        
-        # Wind effects
-        wind_force = Vec3(
-            math.sin(time.time() * 0.5) * 2,
-            0,
-            math.cos(time.time() * 0.3) * 1.5
-        )
-        
-        # Combine forces
-        total_force = gravity + thrust_force + lift_force + drag_force + wind_force
-        
-        # Update velocity
-        self.velocity += total_force * dt
-        
-        # Limit speed
-        if speed > self.config['max_speed']:
-            self.velocity = self.velocity.normalized() * self.config['max_speed']
-        
-        # Update position
-        self.position += self.velocity * dt
-    
-    def update_epic_animations(self, speed):
-        """Enhanced animations for epic gameplay"""
-        # Wing animation
-        wing_beat_time = time.time() * speed * 1.2
-        
-        if speed > 5:
-            wing_flap = math.sin(wing_beat_time) * (18 - speed * 0.4)
-            energy_boost = self.energy * 5
-            
-            base_angle = 8
-            self.left_wing.rotation_z = base_angle + wing_flap + energy_boost
-            self.right_wing.rotation_z = -base_angle - wing_flap - energy_boost
-        else:
-            glide_adjust = math.sin(time.time() * 0.7) * 4
-            self.left_wing.rotation_z = 5 + glide_adjust
-            self.right_wing.rotation_z = -5 - glide_adjust
-        
-        # Body orientation
-        self.rotation_x = math.degrees(math.atan2(-self.velocity.y, abs(self.velocity.z) + 0.1))
-        self.rotation_y += self.yaw_input * 50 * time.dt
-        self.rotation_z = self.roll_input * 35
-    
-    def update_epic_effects(self, speed):
-        """Update enhanced visual effects"""
-        # Enhanced particle trail
-        if speed > 3:
-            for i, particle in enumerate(self.trail_entities):
-                particle.visible = True
-                trail_pos = self.position - self.forward * (i + 1) * 1.2
-                particle.position = trail_pos
-                alpha = max(0, 140 - i*14 - int(speed*2))
-                particle.color = color.rgba(255, 200, 100, alpha)
-        else:
-            for particle in self.trail_entities:
-                particle.visible = False
-        
-        # Energy aura when high energy
-        if self.energy > 0.8:
-            self.energy_aura.visible = True
-            pulse = math.sin(time.time() * 4) * 0.3 + 0.7
-            self.energy_aura.scale = 4 * pulse
-            aura_alpha = int(50 * self.energy * pulse)
-            self.energy_aura.color = color.rgba(100, 200, 255, aura_alpha)
-        else:
-            self.energy_aura.visible = False
-    
-    def update_abilities(self, dt):
-        """Update special abilities"""
-        # Regenerate energy slowly
-        if self.energy < 1.0:
-            self.energy = min(1.0, self.energy + 0.1 * dt)
-        
-        # Regenerate stamina
-        if self.stamina < 1.0:
-            self.stamina = min(1.0, self.stamina + 0.2 * dt)
-    
-    def use_stamina(self, amount):
-        """Use stamina for special maneuvers"""
-        self.stamina = max(0, self.stamina - amount)
-    
-    def thermal_boost(self):
-        """Use thermal vision to find updrafts"""
-        if self.energy > 0.2:
-            self.velocity.y += 3 * time.dt
-            self.energy -= 0.5 * time.dt
-    
-    def breathe_fire(self):
-        """Dragon fire breath ability"""
-        if self.has_fire_breath and self.energy > 0.3:
-            # Create fire effect
-            fire_effect = Entity(
-                model='cube', color=color.rgba(255, 100, 0, 200),
-                scale=(1, 1, 8), position=self.position + self.forward * 4,
-                rotation=self.rotation, parent=scene
-            )
-            
-            # Animate fire
-            fire_effect.animate_scale((3, 3, 12), duration=1)
-            fire_effect.animate('color', color.rgba(255, 0, 0, 0), duration=1)
-            
-            destroy(fire_effect, delay=1.1)
-            self.energy -= 0.2
-
-# =============================================================================
-# 🎮 EPIC GAME SYSTEMS 🎮
-# =============================================================================
-
-class PrehistoricCollectible(Entity):
-    """Prehistoric collectibles - dinosaur eggs, amber, fossils"""
-    
-    def __init__(self, position, collectible_type='dino_egg'):
-        super().__init__()
-        self.position = position
-        self.collectible_type = collectible_type
-        self.collected = False
-        self.rotation_speed = 30
-        
-        # Epic scale for prehistoric items
-        base_scale = 0.8
-        
-        if collectible_type == 'dino_egg':
-            self.model = 'sphere'
-            self.color = color.rgb(200, 180, 160)
-            self.scale = base_scale * 1.2
-        elif collectible_type == 'amber':
-            self.model = 'cube'
-            self.color = color.rgb(255, 180, 0)
-            self.scale = base_scale * 0.8
-        elif collectible_type == 'fossil':
-            self.model = 'cube'
-            self.color = color.rgb(120, 100, 80)
-            self.scale = base_scale
-        
-        # EPIC glow effect
-        self.glow = Entity(
-            parent=self, model='sphere',
-            color=color.rgba(255, 215, 0, 120),
-            scale=3.5
-        )
-        
-        # Prehistoric energy beacon
-        self.energy_beam = Entity(
-            parent=self, model='cube',
-            color=color.rgba(0, 255, 100, 180),
-            scale=(0.2, 8, 0.2), position=(0, 4, 0)
-        )
-    
-    def update(self):
-        """Epic prehistoric collectible animation"""
-        if not self.collected:
-            self.rotation_y += self.rotation_speed * time.dt
-            
-            # Dramatic floating animation
-            self.y += math.sin(time.time() * 2 + self.x) * 1.2 * time.dt
-            
-            # Pulsing epic glow
-            pulse = math.sin(time.time() * 3) * 0.4 + 0.6
-            glow_alpha = int(120 * pulse)
-            self.glow.color = color.rgba(255, 215, 0, glow_alpha)
-            
-            # Energy beam animation
-            beam_alpha = int(180 * pulse)
-            self.energy_beam.color = color.rgba(0, 255, 100, beam_alpha)
-            self.energy_beam.rotation_y += 90 * time.dt
-    
-    def collect(self):
-        """Collect prehistoric artifact"""
-        if not self.collected:
-            self.collected = True
-            
-            # EPIC collection effect
-            explosion = Entity(
-                model='sphere', color=color.rgba(255, 255, 0, 200),
-                scale=1, position=self.position, parent=scene
-            )
-            explosion.animate_scale(8, duration=1.5)
-            explosion.animate('color', color.rgba(255, 255, 0, 0), duration=1.5)
-            destroy(explosion, delay=1.6)
-            
-            self.visible = False
-            self.energy_beam.visible = False
-            return True
-        return False
-
-class PrehistoricGameManager:
-    """Epic game manager for prehistoric San Francisco"""
+class EnhancedGameUI:
+    """Enhanced UI with flight instruments"""
     
     def __init__(self):
-        self.score = 0
-        self.artifacts_collected = 0
-        self.total_artifacts = 0
-        self.flight_time = 0
-        self.max_altitude = 0
-        self.max_speed = 0
-        self.pterodactyl_encounters = 0
-        self.bridge_flythroughs = 0
-        
-        # Game state
-        self.game_started = False
-        self.game_paused = False
-        self.hud_visible = True
-        
-        # EPIC OBJECTIVES
-        self.objectives = [
-            "🦴 Collect 8 prehistoric artifacts",
-            "🌉 Fly through the Golden Gate Bridge 3 times",
-            "🦕 Encounter all 3 pterodactyl species",
-            "🏔️ Reach the summit of Twin Peaks (280m)",
-            "🌊 Fly over Alcatraz Island",
-            "💨 Achieve 40 m/s maximum speed",
-            "⚡ Survive 5 minutes in prehistoric SF"
-        ]
-        self.completed_objectives = []
-        
-        # Reputation with pterodactyls
-        self.pterodactyl_reputation = 0.0
-        self.species_encountered = set()
-        
-        # Bridge flythrough detection
-        self.last_bridge_position = None
-        self.bridge_zone = (-80, 120)  # Golden Gate position
+        self.setup_ui()
     
-    def update(self, player, pterodactyls):
-        """Update epic game state"""
-        if not self.game_started or self.game_paused:
-            return
+    def setup_ui(self):
+        """Setup enhanced UI"""
+        # Flight data panel
+        self.flight_panel = Entity(
+            parent=camera.ui,
+            model='cube',
+            color=color.rgba(0, 0, 0, 100),
+            scale=(0.4, 0.3, 1),
+            position=(-0.6, 0.3, 0)
+        )
         
-        # Update flight time
-        self.flight_time += time.dt
+        # Speed indicator
+        self.speed_text = Text(
+            'Speed: 0 m/s',
+            parent=camera.ui,
+            scale=1.8,
+            color=color.lime,
+            position=(-0.85, 0.45, 0)
+        )
         
-        # Update records
-        if player.position.y > self.max_altitude:
-            self.max_altitude = player.position.y
+        # Altitude indicator
+        self.altitude_text = Text(
+            'Altitude: 0 m',
+            parent=camera.ui,
+            scale=1.8,
+            color=color.cyan,
+            position=(-0.85, 0.4, 0)
+        )
         
-        current_speed = distance(player.velocity, Vec3(0, 0, 0))
-        if current_speed > self.max_speed:
-            self.max_speed = current_speed
+        # G-Force meter
+        self.g_force_text = Text(
+            'G-Force: 1.0',
+            parent=camera.ui,
+            scale=1.6,
+            color=color.yellow,
+            position=(-0.85, 0.35, 0)
+        )
         
-        # Check pterodactyl encounters
-        self.check_pterodactyl_encounters(player, pterodactyls)
+        # Energy level
+        self.energy_text = Text(
+            'Energy: 100%',
+            parent=camera.ui,
+            scale=1.6,
+            color=color.orange,
+            position=(-0.85, 0.3, 0)
+        )
         
-        # Check bridge flythroughs
-        self.check_bridge_flythrough(player)
+        # Course info
+        self.course_text = Text(
+            'No active course',
+            parent=camera.ui,
+            scale=1.8,
+            color=color.white,
+            position=(0.4, 0.45, 0)
+        )
         
-        # Check objectives
-        self.check_epic_objectives()
+        # Score
+        self.score_text = Text(
+            'Score: 0',
+            parent=camera.ui,
+            scale=2.2,
+            color=color.gold,
+            position=(0.4, 0.4, 0)
+        )
+        
+        # Hazard warnings
+        self.warning_text = Text(
+            '',
+            parent=camera.ui,
+            scale=2.0,
+            color=color.red,
+            position=(0, 0.3, 0),
+            origin=(0, 0)
+        )
+        
+        # Controls help
+        self.controls_text = Text(
+            '🎮 WASD=Flight | Space=Boost | Shift=Dive | 1-3=Courses | C=Controls | ESC=Menu',
+            parent=camera.ui,
+            scale=1.2,
+            color=color.light_gray,
+            position=(-0.9, -0.45, 0)
+        )
+        
+        print("🎨 Enhanced UI initialized")
     
-    def check_pterodactyl_encounters(self, player, pterodactyls):
-        """Track encounters with different pterodactyl species"""
-        for pterodactyl in pterodactyls:
-            distance_to_ptero = distance(player.position, pterodactyl.position)
-            
-            if distance_to_ptero < 20:
-                if hasattr(pterodactyl, 'species_type'):
-                    self.species_encountered.add(pterodactyl.species_type)
-                    
-                if distance_to_ptero < 8:
-                    self.pterodactyl_encounters += 1
-    
-    def check_bridge_flythrough(self, player):
-        """Check if player flew through Golden Gate Bridge"""
-        bridge_x, bridge_z = self.bridge_zone
+    def update_flight_data(self, flight_data):
+        """Update flight instruments"""
+        speed = flight_data.get('speed', 0)
+        altitude = flight_data.get('altitude', 0)
+        g_force = flight_data.get('g_force', 1.0)
         
-        # Check if near bridge
-        if (abs(player.x - bridge_x) < 60 and 
-            abs(player.z - bridge_z) < 15 and
-            10 < player.y < 60):
-            
-            current_side = "north" if player.z > bridge_z else "south"
-            
-            if self.last_bridge_position and self.last_bridge_position != current_side:
-                # Flew through the bridge!
-                self.bridge_flythroughs += 1
-                self.score += 500
-                print(f"🌉 EPIC! Flew through Golden Gate Bridge! Total: {self.bridge_flythroughs}")
-            
-            self.last_bridge_position = current_side
+        self.speed_text.text = f'Speed: {speed:.1f} m/s'
+        self.altitude_text.text = f'Altitude: {altitude:.1f} m'
+        self.g_force_text.text = f'G-Force: {g_force:.1f}'
+        
+        # Color coding
+        if speed > 35:
+            self.speed_text.color = color.red
+        elif speed > 25:
+            self.speed_text.color = color.yellow
         else:
-            self.last_bridge_position = None
+            self.speed_text.color = color.lime
+        
+        if altitude < 10:
+            self.altitude_text.color = color.red
+        elif altitude < 25:
+            self.altitude_text.color = color.yellow
+        else:
+            self.altitude_text.color = color.cyan
+        
+        if g_force > 3:
+            self.g_force_text.color = color.red
+        elif g_force > 2:
+            self.g_force_text.color = color.yellow
+        else:
+            self.g_force_text.color = color.lime
     
-    def check_epic_objectives(self):
-        """Check completion of epic objectives"""
+    def update_character_data(self, character_data):
+        """Update character specific data"""
+        energy = character_data.get('energy_level', 1.0)
+        self.energy_text.text = f'Energy: {energy*100:.0f}%'
         
-        # Bridge flythrough objective
-        if (self.bridge_flythroughs >= 3 and 
-            "🌉 Fly through the Golden Gate Bridge 3 times" not in self.completed_objectives):
-            self.completed_objectives.append("🌉 Fly through the Golden Gate Bridge 3 times")
-            self.score += 2000
-        
-        # Species encounter objective
-        if (len(self.species_encountered) >= 3 and
-            "🦕 Encounter all 3 pterodactyl species" not in self.completed_objectives):
-            self.completed_objectives.append("🦕 Encounter all 3 pterodactyl species")
-            self.score += 1500
-        
-        # Altitude objective
-        if (self.max_altitude >= 280 and
-            "🏔️ Reach the summit of Twin Peaks (280m)" not in self.completed_objectives):
-            self.completed_objectives.append("🏔️ Reach the summit of Twin Peaks (280m)")
-            self.score += 1000
-        
-        # Speed objective
-        if (self.max_speed >= 40 and
-            "💨 Achieve 40 m/s maximum speed" not in self.completed_objectives):
-            self.completed_objectives.append("💨 Achieve 40 m/s maximum speed")
-            self.score += 800
-        
-        # Survival objective
-        if (self.flight_time >= 300 and
-            "⚡ Survive 5 minutes in prehistoric SF" not in self.completed_objectives):
-            self.completed_objectives.append("⚡ Survive 5 minutes in prehistoric SF")
-            self.score += 1200
-        
-        # Artifact objective
-        if (self.artifacts_collected >= 8 and
-            "🦴 Collect 8 prehistoric artifacts" not in self.completed_objectives):
-            self.completed_objectives.append("🦴 Collect 8 prehistoric artifacts")
-            self.score += 2500
+        if energy < 0.3:
+            self.energy_text.color = color.red
+        elif energy < 0.6:
+            self.energy_text.color = color.yellow
+        else:
+            self.energy_text.color = color.lime
     
-    def collect_artifact(self, artifact_type):
-        """Handle prehistoric artifact collection"""
-        self.artifacts_collected += 1
-        
-        if artifact_type == 'dino_egg':
-            self.score += 200
-        elif artifact_type == 'amber':
-            self.score += 150
-        elif artifact_type == 'fossil':
-            self.score += 100
+    def update_course_info(self, course_status):
+        """Update course information"""
+        if course_status:
+            self.course_text.text = f"Course: {course_status['course_name']}"
+            self.score_text.text = f"Score: {course_status['score']}"
+            
+            if course_status['active']:
+                rings_info = f" | Rings: {course_status['rings_completed']}/{course_status['total_rings']}"
+                self.course_text.text += rings_info
+        else:
+            self.course_text.text = "No active course"
+            self.score_text.text = "Score: 0"
+    
+    def update_warnings(self, hazard_warnings):
+        """Update hazard warnings"""
+        if hazard_warnings:
+            warning_text = " | ".join(hazard_warnings)
+            self.warning_text.text = f"⚠️ {warning_text}"
+        else:
+            self.warning_text.text = ""
 
 # =============================================================================
-# 🌉 MAIN EPIC GAME CLASS 🌉
+# 🚀 MAIN GAME CLASS 🚀
 # =============================================================================
 
-class PrehistoricSanFranciscoSimulator:
-    """🦕 EPIC MAIN GAME CLASS - MAXIMUM POWER ACHIEVED 🌉"""
+class EnhancedPrehistoricSimulator:
+    """🦕 ENHANCED PREHISTORIC SAN FRANCISCO SIMULATOR 🌉"""
     
     def __init__(self):
-        self.setup_epic_window()
-        self.game_manager = PrehistoricGameManager()
+        self.setup_window()
         
-        # Create the prehistoric world
-        self.create_prehistoric_world()
-        self.create_camera_system()
-        self.create_ui_system()
-        self.create_prehistoric_collectibles()
+        # Create enhanced systems
+        self.create_world()
+        self.create_character()
+        self.create_ui()
+        self.create_managers()
         
         # Game state
-        self.show_menu = True
-        self.camera_mode = 'overhead'
+        self.game_active = False
+        self.show_intro = True
         
-        # EPIC startup messages
-        print("🦕" * 50)
-        print("PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR")
-        print("FEATURING PTERODACTYLS AND THE GOLDEN GATE BRIDGE")
-        print("SENIOR DEVELOPER QUALITY - WE ARE LEGION")
-        print("🦕" * 50)
+        print("🦕" * 60)
+        print("🚀 ENHANCED PREHISTORIC SAN FRANCISCO FLIGHT SIMULATOR 🚀")
+        print("🦕" * 60)
         print()
         print("🎮 CONTROLS:")
-        print("   WASD = Flight Control")
-        print("   Space = Energy Boost")
+        print("   WASD = Advanced Flight Control")
+        print("   Space = Energy Boost / Thermal Riding")
         print("   Shift = Power Dive")
-        print("   E = Thermal Vision")
-        print("   F = Special Ability")
-        print("   Mouse Wheel = Camera Zoom")
-        print("   C = Camera Mode")
+        print("   Q/E = Roll Control")
+        print("   1 = Start Golden Gate Circuit")
+        print("   2 = Start Twin Peaks Challenge")
+        print("   C = Cycle Control Schemes")
+        print("   ENTER = Start Game")
         print()
-        print("🎯 EPIC OBJECTIVES:")
-        print("   🌉 Fly through Golden Gate Bridge")
-        print("   🦕 Meet prehistoric pterodactyls")
-        print("   🦴 Collect ancient artifacts")
-        print("   🏔️ Conquer Twin Peaks")
-        print("   ⚡ Survive the prehistoric world!")
+        print("✨ NEW FEATURES:")
+        print("   🌪️ Dynamic weather and obstacles")
+        print("   🏁 Racing courses with rings and targets")
+        print("   ⚛️ Advanced realistic physics")
+        print("   🦅 Ultra-realistic flying character")
+        print("   🎮 Multiple control schemes")
+        print("   ✨ Enhanced visual effects")
     
-    def setup_epic_window(self):
-        """Configure window for maximum epic factor"""
-        window.title = '🦕 PREHISTORIC SAN FRANCISCO - Golden Gate Pterodactyls 🌉'
+    def setup_window(self):
+        """Setup game window"""
+        window.title = '🦕 ENHANCED PREHISTORIC SAN FRANCISCO - Ultimate Flight Simulator 🌉'
         window.borderless = False
         window.fullscreen = False
         window.exit_button.visible = False
         window.fps_counter.enabled = True
         
-        # Enhanced graphics for epic experience
         Entity.default_shader = basic_lighting_shader
     
-    def create_prehistoric_world(self):
-        """🌍 CREATE THE EPIC PREHISTORIC SAN FRANCISCO WORLD 🌍"""
-        print("🌍 Generating EPIC Prehistoric San Francisco...")
+    def create_world(self):
+        """Create the enhanced world"""
+        print("🌍 Creating Enhanced Prehistoric San Francisco...")
         
-        # San Francisco terrain with accurate topography
+        # Terrain
         self.terrain = SanFranciscoTerrain(size=400, resolution=80)
-        print("   ✓ San Francisco hills, bay, and terrain created")
+        print("   ✓ Enhanced terrain with accurate SF topography")
         
-        # THE GOLDEN GATE BRIDGE - CENTERPIECE!
-        self.golden_gate_bridge = GoldenGateBridge()
-        print("   ✓ 🌉 GOLDEN GATE BRIDGE constructed!")
+        # Golden Gate Bridge
+        self.golden_gate = GoldenGateBridge()
+        print("   ✓ 🌉 Golden Gate Bridge constructed")
         
-        # Iconic SF landmarks
-        self.landmarks = SanFranciscoLandmarks(self.terrain)
-        print("   ✓ SF landmarks: Alcatraz, Transamerica, Coit Tower added")
+        # Lighting
+        DirectionalLight(color=color.rgb(255, 220, 180), rotation=(60, 45, 0))
+        AmbientLight(color=color.rgb(100, 120, 150))
+        Sky(texture='sky_default')
         
-        # PTERODACTYL ECOSYSTEM!
-        self.pterodactyl_ecosystem = PterodactylEcosystem()
-        print("   ✓ 🦕 PTERODACTYL ECOSYSTEM activated!")
-        
-        # Player creature
-        self.player = PrehistoricPlayer('archaeopteryx')  # Can be 'dragon' or 'pterodactyl'
-        print("   ✓ Player creature ready for epic flight!")
-        
-        # Set up lighting and atmosphere
-        DirectionalLight(
-            color=color.rgb(255, 200, 150),
-            rotation=(50, 45, 0)
-        )
-        AmbientLight(color=color.rgb(120, 100, 80))
-        
-        # Sky with prehistoric atmosphere
-        sky = Sky(texture='sky_default')
-        
-        # Dynamic fog
+        # Atmospheric effects
         scene.fog_density = 0.008
         scene.fog_color = color.rgb(0.7, 0.8, 0.9)
         
-        print("🌍 EPIC WORLD CREATION COMPLETE!")
-        print(f"   🦕 {len(self.pterodactyl_ecosystem.get_all_pterodactyls())} pterodactyls roaming SF")
-        print(f"   🌉 Golden Gate Bridge ready for epic flythroughs")
-        print(f"   🏔️ Twin Peaks at 280m ready to conquer")
+        print("🌍 Enhanced world creation complete!")
     
-    def create_camera_system(self):
-        """Epic camera system for prehistoric SF"""
+    def create_character(self):
+        """Create enhanced character"""
+        # Enhanced physics config
+        physics_config = {
+            'mass': 1.5,
+            'wing_area': 2.5,
+            'wing_span': 3.0
+        }
         
-        # Set up overhead camera following the player
-        camera.parent = self.player
-        camera.position = (0, 25, -30)  # Overhead view
-        camera.rotation_x = 45  # Look down at angle
+        # Create advanced physics
+        self.physics = AdvancedFlightPhysics(None, physics_config)
         
-        print("🎥 Epic camera system initialized for SF flyovers")
+        # Create realistic character
+        self.player = RealisticFlyingCharacter('archaeopteryx', self.physics)
+        self.physics.entity = self.player  # Link physics to character
+        
+        print("🦅 Enhanced character with advanced physics created")
     
-    def create_ui_system(self):
-        """Epic UI for prehistoric San Francisco"""
+    def create_ui(self):
+        """Create enhanced UI"""
+        self.ui = EnhancedGameUI()
         
-        # Epic score display
-        self.score_text = Text(
-            'Score: 0',
-            parent=camera.ui,
-            scale=2.5,
-            color=color.gold,
-            position=(0.6, 0.45, 0),
-            visible=False
-        )
-        
-        # Flight data
-        self.speed_text = Text(
-            'Speed: 0 m/s',
-            parent=camera.ui,
-            scale=1.8,
-            color=color.white,
-            position=(-0.85, 0.45, 0),
-            visible=False
-        )
-        
-        self.altitude_text = Text(
-            'Altitude: 0 m',
-            parent=camera.ui,
-            scale=1.8,
-            color=color.white,
-            position=(-0.85, 0.4, 0),
-            visible=False
-        )
-        
-        # Pterodactyl reputation
-        self.reputation_text = Text(
-            'Pterodactyl Rep: Neutral',
-            parent=camera.ui,
-            scale=1.8,
-            color=color.cyan,
-            position=(0.55, 0.4, 0),
-            visible=False
-        )
-        
-        # Epic objectives
-        self.objectives_text = Text(
-            'EPIC OBJECTIVES:\n🦕 Rule the prehistoric skies!',
-            parent=camera.ui,
-            scale=1.4,
-            color=color.yellow,
-            position=(-0.9, 0.3, 0),
-            visible=False
-        )
-        
-        # Bridge flythrough counter
-        self.bridge_text = Text(
-            '🌉 Bridge Flythroughs: 0',
-            parent=camera.ui,
-            scale=1.6,
-            color=color.orange,
-            position=(-0.9, -0.35, 0),
-            visible=False
-        )
-        
-        # Species encounter tracker
-        self.species_text = Text(
-            '🦕 Species Met: 0/3',
-            parent=camera.ui,
-            scale=1.6,
-            color=color.lime,
-            position=(-0.9, -0.4, 0),
-            visible=False
-        )
-        
-        # Controls help
-        self.controls_text = Text(
-            '🎮 WASD=Flight | Space=Boost | Shift=Dive | E=Thermal | F=Special | ESC=Menu',
-            parent=camera.ui,
-            scale=1.2,
-            color=color.light_gray,
-            position=(-0.9, -0.45, 0),
-            visible=False
-        )
-        
-        # Epic intro message
+        # Intro message
         self.intro_text = Text(
-            '🦕 WELCOME TO PREHISTORIC SAN FRANCISCO! 🌉\nPress ENTER to begin your epic adventure!',
+            '🦕 ENHANCED PREHISTORIC SAN FRANCISCO! 🌉\n'
+            '✨ Advanced Physics | 🌪️ Dynamic Obstacles | 🏁 Racing Courses\n'
+            'Press ENTER to begin the ultimate flight adventure!',
             parent=camera.ui,
-            scale=2.5,
+            scale=2.0,
             color=color.gold,
             position=(0, 0, 0),
-            origin=(0, 0),
-            visible=True
+            origin=(0, 0)
         )
     
-    def create_prehistoric_collectibles(self):
-        """Spawn prehistoric artifacts across San Francisco"""
-        self.collectibles = []
+    def create_managers(self):
+        """Create game managers"""
+        # Environmental hazards
+        self.hazard_manager = EnvironmentalHazardManager(world_bounds=200)
         
-        # Dinosaur eggs around Twin Peaks
-        for _ in range(6):
-            x = random.uniform(-20, 20)
-            z = random.uniform(-20, 20)
-            y = self.terrain.get_height_at_position(x, z) + random.uniform(5, 15)
-            
-            egg = PrehistoricCollectible(Vec3(x, y, z), 'dino_egg')
-            self.collectibles.append(egg)
+        # Racing system
+        self.racing_manager = RacingManager()
         
-        # Amber near Golden Gate Bridge
-        for _ in range(4):
-            x = random.uniform(-100, -60)
-            z = random.uniform(100, 140)
-            y = self.terrain.get_height_at_position(x, z) + random.uniform(8, 25)
-            
-            amber = PrehistoricCollectible(Vec3(x, y, z), 'amber')
-            self.collectibles.append(amber)
-        
-        # Fossils around landmarks
-        landmark_positions = [
-            Vec3(-20, 25, 100),   # Alcatraz area
-            Vec3(-45, 70, 45),    # Downtown
-            Vec3(-60, 90, 60),    # Telegraph Hill
-        ]
-        
-        for pos in landmark_positions:
-            for _ in range(2):
-                offset = Vec3(random.uniform(-15, 15), random.uniform(5, 20), random.uniform(-15, 15))
-                fossil = PrehistoricCollectible(pos + offset, 'fossil')
-                self.collectibles.append(fossil)
-        
-        self.game_manager.total_artifacts = len(self.collectibles)
-        print(f"🦴 {len(self.collectibles)} prehistoric artifacts placed across SF")
+        print("🎮 All game managers initialized")
     
-    def start_epic_game(self):
-        """🚀 START THE EPIC PREHISTORIC ADVENTURE! 🚀"""
-        self.show_menu = False
+    def start_game(self):
+        """Start the enhanced game"""
+        self.game_active = True
+        self.show_intro = False
         self.intro_text.visible = False
         
-        # Show all epic UI elements
-        self.score_text.visible = True
-        self.speed_text.visible = True
-        self.altitude_text.visible = True
-        self.reputation_text.visible = True
-        self.objectives_text.visible = True
-        self.bridge_text.visible = True
-        self.species_text.visible = True
-        self.controls_text.visible = True
+        # Setup camera
+        camera.parent = self.player
+        camera.position = (0, 25, -30)
+        camera.rotation_x = 45
         
-        self.game_manager.game_started = True
-        
-        print("🦕🌉 EPIC PREHISTORIC SAN FRANCISCO ADVENTURE BEGINS! 🌉🦕")
-        print("Soar with pterodactyls over the Golden Gate Bridge!")
-    
-    def check_prehistoric_collectibles(self):
-        """Check for epic artifact collection"""
-        player_pos = self.player.position
-        
-        for collectible in self.collectibles:
-            if not collectible.collected:
-                distance_to_collectible = distance(player_pos, collectible.position)
-                
-                if distance_to_collectible < 4:  # Collection radius
-                    if collectible.collect():
-                        self.game_manager.collect_artifact(collectible.collectible_type)
-                        print(f"🦴 EPIC! Collected {collectible.collectible_type}! Score: {self.game_manager.score}")
+        print("🚀 Enhanced game started!")
     
     def update(self):
-        """🔄 EPIC MAIN UPDATE LOOP 🔄"""
-        if self.show_menu:
+        """Main game update loop"""
+        if not self.game_active:
             return
         
-        if not self.game_manager.game_paused:
-            # Update pterodactyl ecosystem
-            all_pterodactyls = self.pterodactyl_ecosystem.get_all_pterodactyls()
-            self.pterodactyl_ecosystem.update(self.player.position)
-            
-            # Update player with pterodactyl interactions
-            nearby_pterodactyls = [p for p in all_pterodactyls 
-                                 if distance(self.player.position, p.position) < 50]
-            flight_data = self.player.update(nearby_pterodactyls)
-            
-            # Update game manager
-            self.game_manager.update(self.player, all_pterodactyls)
-            
-            # Check collectibles
-            self.check_prehistoric_collectibles()
-            
-            # Update collectibles
-            for collectible in self.collectibles:
-                collectible.update()
+        dt = time.dt
         
-        # Update epic UI
-        self.update_epic_ui()
-    
-    def update_epic_ui(self):
-        """Update all epic UI elements"""
-        if not self.game_manager.game_started:
-            return
+        # Update character
+        flight_data = self.player.update(dt)
         
-        # Get flight data
-        speed = distance(self.player.velocity, Vec3(0, 0, 0))
+        # Update environmental hazards
+        self.hazard_manager.update(dt, self.player.position)
         
-        # Update UI elements
-        self.score_text.text = f'Score: {self.game_manager.score:,}'
-        self.speed_text.text = f'Speed: {speed:.1f} m/s'
-        self.altitude_text.text = f'Altitude: {self.player.position.y:.1f} m'
+        # Get environmental effects
+        env_effects = self.hazard_manager.get_environmental_effects(self.player.position)
         
-        # Pterodactyl reputation
-        rep = self.game_manager.pterodactyl_reputation
-        if rep > 0.5:
-            rep_status = "🦕 ALLIED"
-            rep_color = color.green
-        elif rep < -0.5:
-            rep_status = "⚔️ HOSTILE"
-            rep_color = color.red
-        else:
-            rep_status = "😐 NEUTRAL"
-            rep_color = color.cyan
+        # Apply environmental effects to physics
+        if env_effects['turbulence'] != Vec3(0, 0, 0):
+            self.physics.velocity += env_effects['turbulence'] * dt * 0.1
         
-        self.reputation_text.text = f'Pterodactyl Rep: {rep_status}'
-        self.reputation_text.color = rep_color
+        # Update racing
+        self.racing_manager.update(dt, self.player.position, self.physics.velocity)
         
-        # Bridge flythroughs
-        self.bridge_text.text = f'🌉 Bridge Flythroughs: {self.game_manager.bridge_flythroughs}'
-        
-        # Species encounters
-        species_count = len(self.game_manager.species_encountered)
-        self.species_text.text = f'🦕 Species Met: {species_count}/3'
-        
-        # Epic objectives
-        completed_text = "🏆 COMPLETED:\n"
-        for obj in self.game_manager.completed_objectives:
-            completed_text += f"✓ {obj}\n"
-        
-        remaining_text = "\n🎯 REMAINING:\n"
-        for obj in self.game_manager.objectives:
-            if obj not in self.game_manager.completed_objectives:
-                remaining_text += f"• {obj}\n"
-        
-        self.objectives_text.text = completed_text + remaining_text
-    
-    def toggle_pause(self):
-        """Toggle epic pause"""
-        if not self.game_manager.game_started:
-            return
-            
-        self.game_manager.game_paused = not self.game_manager.game_paused
+        # Update UI
+        self.ui.update_flight_data(flight_data)
+        self.ui.update_character_data(self.player.get_flight_data())
+        self.ui.update_course_info(self.racing_manager.get_course_status())
+        self.ui.update_warnings(env_effects['hazard_warnings'])
 
 # =============================================================================
-# 🚀 EPIC EXECUTION - LAUNCH THE PREHISTORIC ADVENTURE! 🚀
+# 🎮 INPUT HANDLING 🎮
 # =============================================================================
 
-# Create the epic game instance
-prehistoric_sf_game = PrehistoricSanFranciscoSimulator()
+# Create game instance
+enhanced_game = EnhancedPrehistoricSimulator()
 
 def input(key):
-    """🎮 EPIC INPUT HANDLING 🎮"""
+    """Enhanced input handling"""
     if key == 'escape':
-        if prehistoric_sf_game.show_menu:
+        if enhanced_game.show_intro:
             quit()
         else:
-            prehistoric_sf_game.toggle_pause()
+            enhanced_game.game_active = not enhanced_game.game_active
     
     elif key == 'enter':
-        if prehistoric_sf_game.show_menu:
-            prehistoric_sf_game.start_epic_game()
+        if enhanced_game.show_intro:
+            enhanced_game.start_game()
     
-    elif key == 'f1':
-        # Toggle HUD
-        if prehistoric_sf_game.game_manager.game_started:
-            prehistoric_sf_game.score_text.visible = not prehistoric_sf_game.score_text.visible
-            prehistoric_sf_game.speed_text.visible = not prehistoric_sf_game.speed_text.visible
-            prehistoric_sf_game.altitude_text.visible = not prehistoric_sf_game.altitude_text.visible
+    elif key == '1':
+        if enhanced_game.game_active:
+            enhanced_game.racing_manager.start_course('Golden Gate Circuit')
+    
+    elif key == '2':
+        if enhanced_game.game_active:
+            enhanced_game.racing_manager.start_course('Twin Peaks Challenge')
+    
+    elif key == 'c':
+        if enhanced_game.game_active:
+            # Cycle control schemes
+            current = enhanced_game.player.control_scheme
+            if current == 'realistic':
+                enhanced_game.player.set_control_scheme('arcade')
+            elif current == 'arcade':
+                enhanced_game.player.set_control_scheme('expert')
+            else:
+                enhanced_game.player.set_control_scheme('realistic')
     
     elif key == 'f11':
         window.fullscreen = not window.fullscreen
 
 def update():
-    """🔄 MAIN EPIC UPDATE FUNCTION 🔄"""
-    prehistoric_sf_game.update()
+    """Main update function"""
+    enhanced_game.update()
 
-# 🚀 EPIC EXECUTION - LAUNCH THE PREHISTORIC ADVENTURE! 🚀
+# 🚀 LAUNCH THE ENHANCED ADVENTURE! 🚀
 if __name__ == '__main__':
-    print("🦕🌉 LAUNCHING PREHISTORIC SAN FRANCISCO! 🌉🦕")
-    print("MAXIMUM EPIC FACTOR ACHIEVED")
-    print("WE ARE LEGION - PREPARE FOR GREATNESS!")
-    app.run() 
+    print("🦕🌉 LAUNCHING ENHANCED PREHISTORIC SAN FRANCISCO! 🌉🦕")
+    print("🚀 MAXIMUM EPIC FACTOR WITH ADVANCED FEATURES 🚀")
+    print("WE ARE LEGION - PREPARE FOR ULTIMATE GREATNESS!")
+    app.run()
